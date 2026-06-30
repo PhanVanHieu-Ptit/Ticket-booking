@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ticket-booking-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ticket_booking
+    ports:
+      - '5433:5432' # Exposed on 5433 to allow direct admin/migration connection if needed
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d ticket_booking']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ticket-network
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: ticket-booking-pgbouncer
+    ports:
+      - '5432:6432' # PgBouncer acts as the primary Postgres gateway on port 5432
+    volumes:
+      - ./docker/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./docker/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    environment:
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=ticket_booking
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ticket-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ticket-booking-redis
+    command: redis-server --notify-keyspace-events Kx --loglevel warning
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ticket-network
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  ticket-network:
+    driver: bridge
