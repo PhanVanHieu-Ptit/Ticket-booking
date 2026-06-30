@@ -3,32 +3,33 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/config"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Load environment variables from .env if present
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, relying on environment variables")
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Set Gin mode
-	ginMode := os.Getenv("GIN_MODE")
-	if ginMode != "" {
-		gin.SetMode(ginMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
-	}
+	// Initialize structured logger
+	logger.Init(cfg.AppEnv)
+	logger.Info("Starting Ticket Booking API Server...", "env", cfg.AppEnv, "port", cfg.Port)
+
+	// Set Gin mode based on config
+	gin.SetMode(cfg.GinMode)
 
 	// Initialize Gin engine
 	r := gin.New()
 
-	// Use standard recovery and logging middleware
-	r.Use(gin.Recovery())
-	r.Use(gin.Logger())
+	// Use custom recovery and logging middleware
+	r.Use(logger.RecoveryMiddleware())
+	r.Use(logger.GinMiddleware())
 
 	// Custom CORS middleware
 	r.Use(func(c *gin.Context) {
@@ -48,28 +49,23 @@ func main() {
 	// Base API route group
 	api := r.Group("/api")
 	{
-		// Health check endpoint
+		// Health check endpoint using standard response envelope
 		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
+			c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{
 				"status":      "healthy",
 				"version":     "1.0.0-foundation",
-				"environment": os.Getenv("APP_ENV"),
+				"environment": cfg.AppEnv,
 				"services": gin.H{
 					"database": "mocked_healthy",
 					"redis":    "mocked_healthy",
 				},
-			})
+			}))
 		})
 	}
 
-	// Determine port
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("Starting Ticket Booking API Server on port %s...", port)
-	if err := r.Run(":" + port); err != nil {
+	logger.Info("Server is running", "addr", ":"+cfg.Port)
+	if err := r.Run(":" + cfg.Port); err != nil {
+		logger.Error("Failed to start server", "error", err)
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
