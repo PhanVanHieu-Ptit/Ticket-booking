@@ -17,6 +17,7 @@ type Config struct {
 	DirectDatabaseURL string
 	RedisURL          string
 	AdminToken        string
+	JWTSecret         string
 }
 
 // Load loads the configuration from environment variables.
@@ -33,6 +34,7 @@ func Load() (*Config, error) {
 		DirectDatabaseURL: os.Getenv("DIRECT_DATABASE_URL"),
 		RedisURL:          os.Getenv("REDIS_URL"),
 		AdminToken:        os.Getenv("ADMIN_TOKEN"),
+		JWTSecret:         os.Getenv("JWT_SECRET"),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -57,6 +59,9 @@ func (c *Config) Validate() error {
 	}
 	if c.AdminToken == "" {
 		missing = append(missing, "ADMIN_TOKEN")
+	}
+	if c.JWTSecret == "" {
+		missing = append(missing, "JWT_SECRET")
 	}
 
 	if len(missing) > 0 {

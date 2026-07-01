@@ -11,4 +11,7 @@ const (
 	ErrCodeTicketSoldOut = "TICKET_SOLD_OUT"
 	ErrCodeHoldExpired   = "HOLD_EXPIRED"
 	ErrCodeLimitExceeded = "LIMIT_EXCEEDED"
+	ErrCodeSessionRequired = "SESSION_REQUIRED"
+	ErrCodeAdminUnauthorized = "ADMIN_UNAUTHORIZED"
+	ErrCodeInvalidSessionToken = "INVALID_SESSION_TOKEN"
 )

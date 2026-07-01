@@ -4,6 +4,10 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/handlers"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/middleware"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/config"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
@@ -21,6 +25,41 @@ func main() {
 	logger.Init(cfg.AppEnv)
 	logger.Info("Starting Ticket Booking API Server...", "env", cfg.AppEnv, "port", cfg.Port)
 
+<<<<<<< Updated upstream
+=======
+	// Initialize database connection pool
+	database, err := db.Init(cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("Failed to initialize database", "error", err)
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("Failed to close database connection pool", "error", err)
+		}
+	}()
+	logger.Info("Database connection pool initialized successfully")
+
+	// Initialize Redis connection pool
+	rdb, err := redis.Init(cfg.RedisURL)
+	if err != nil {
+		logger.Error("Failed to initialize Redis connection pool", "error", err)
+		log.Fatalf("Failed to initialize Redis: %v", err)
+	}
+	logger.Info("Redis connection pool initialized successfully")
+
+	// Synchronize ticket inventory from Postgres to Redis on startup
+	if err := redis.SyncInventory(database); err != nil {
+		logger.Error("Failed to synchronize ticket inventory to Redis", "error", err)
+		log.Fatalf("Failed to synchronize ticket inventory: %v", err)
+	}
+
+	// Initialize and start SSE event broker
+	sse.GlobalBroker = sse.NewBroker()
+	sse.GlobalBroker.Start()
+	logger.Info("SSE Event Broker started successfully")
+
+>>>>>>> Stashed changes
 	// Set Gin mode based on config
 	gin.SetMode(cfg.GinMode)
 
@@ -46,21 +85,79 @@ func main() {
 		c.Next()
 	})
 
+	// Initialize handlers
+	sessionHandler := handlers.NewSessionHandler()
+	adminHandler := handlers.NewAdminHandler(database, []byte(cfg.JWTSecret))
+	availabilityHandler := handlers.NewAvailabilityHandler(database, rdb, sse.GlobalBroker, []byte(cfg.JWTSecret))
+
 	// Base API route group
 	api := r.Group("/api")
 	{
 		// Health check endpoint using standard response envelope
 		api.GET("/health", func(c *gin.Context) {
+<<<<<<< Updated upstream
+=======
+			dbStatus := "healthy"
+			if err := database.Ping(); err != nil {
+				dbStatus = "unhealthy"
+				logger.Error("Database health check ping failed", "error", err)
+			}
+
+			redisStatus := "healthy"
+			if err := rdb.Ping(c.Request.Context()).Err(); err != nil {
+				redisStatus = "unhealthy"
+				logger.Error("Redis health check ping failed", "error", err)
+			}
+
+>>>>>>> Stashed changes
 			c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{
 				"status":      "healthy",
 				"version":     "1.0.0-foundation",
 				"environment": cfg.AppEnv,
 				"services": gin.H{
+<<<<<<< Updated upstream
 					"database": "mocked_healthy",
 					"redis":    "mocked_healthy",
+=======
+					"database": dbStatus,
+					"redis":    redisStatus,
+>>>>>>> Stashed changes
 				},
 			}))
 		})
+	}
+
+	// v1 API route group with session middleware
+	v1 := r.Group("/api/v1")
+	v1.Use(middleware.SessionMiddleware(cfg.JWTSecret, cfg.IsProduction()))
+	{
+		// Sessions endpoint
+		v1.POST("/sessions", sessionHandler.InitializeSession)
+
+		// Availability endpoints
+		v1.GET("/tickets/availability", availabilityHandler.GetAvailability)
+		v1.GET("/tickets/availability/stream", availabilityHandler.StreamAvailability)
+
+		// Admin route group
+		admin := v1.Group("/admin")
+		{
+			// Login is unprotected by admin auth middleware (but has session middleware)
+			admin.POST("/login", adminHandler.Login)
+
+			// Protect all other admin routes
+			adminAuth := admin.Group("")
+			adminAuth.Use(middleware.AdminAuthMiddleware(cfg.JWTSecret))
+			{
+				adminAuth.GET("/metrics", func(c *gin.Context) {
+					c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{
+						"message": "protected metrics content",
+					}))
+				})
+				adminAuth.GET("/holds", func(c *gin.Context) {
+					c.JSON(http.StatusOK, types.NewSuccessResponse([]any{}))
+				})
+			}
+		}
 	}
 
 	logger.Info("Server is running", "addr", ":"+cfg.Port)
