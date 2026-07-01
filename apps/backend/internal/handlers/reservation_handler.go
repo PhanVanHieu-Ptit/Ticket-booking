@@ -198,6 +198,24 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	}
 	defer tx.Rollback() // Safe to call: no-op if committed
 
+	// Clean up any expired holds for this session to prevent unique constraint violation
+	_, err = tx.ExecContext(ctx, `
+		UPDATE tickets 
+		SET status = 'Available', session_id = NULL, held_at = NULL, expires_at = NULL, updated_at = NOW() 
+		WHERE session_id = $1 AND status = 'Holding' AND expires_at <= NOW()
+	`, sessionID)
+	if err != nil {
+		logger.Error("Failed to clean up expired holds for session during reservation", "error", err, "session_id", sessionID)
+		tx.Rollback()
+		h.rollbackRedis(ctx, sessionID, req.Category, ticketID)
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+			appErrors.ErrCodeReservationFailed,
+			"Reservation failed during database cleanup",
+			nil,
+		))
+		return
+	}
+
 	// Update ticket status to 'Holding' where status is 'Available'
 	result, err := tx.ExecContext(ctx, `
 		UPDATE tickets 

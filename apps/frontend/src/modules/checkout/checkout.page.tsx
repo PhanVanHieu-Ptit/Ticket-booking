@@ -40,6 +40,19 @@ export const CheckoutPage: React.FC = () => {
   const [expired, setExpired] = useState<boolean>(false);
   const [email, setEmail] = useState<string>("");
   const [cardName, setCardName] = useState<string>("");
+  const [cancelling, setCancelling] = useState<boolean>(false);
+
+  const handleCancelReservation = async () => {
+    setCancelling(true);
+    try {
+      await bookingApi.cancelHold();
+      navigate("/", { state: { message: "Your reservation has been cancelled successfully." } });
+    } catch (err: any) {
+      alert(err.message || "Failed to cancel reservation.");
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const fetchHold = async () => {
     try {
@@ -164,11 +177,24 @@ export const CheckoutPage: React.FC = () => {
 
               <button 
                 type="submit"
-                disabled={expired}
+                disabled={expired || cancelling}
                 className="w-full py-4 bg-primary hover:bg-primary/95 text-white font-bold rounded-xl transition-all shadow-lg shadow-primary/20 hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 <CreditCard className="w-5 h-5" />
                 Pay Now
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCancelReservation}
+                disabled={expired || cancelling}
+                className="w-full py-3 bg-neutral-900 hover:bg-neutral-800/80 text-neutral-300 font-semibold rounded-xl border border-white/5 transition-all hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              >
+                {cancelling ? (
+                  <div className="w-5 h-5 border-2 border-neutral-300 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  "Cancel Reservation"
+                )}
               </button>
             </form>
           </div>
