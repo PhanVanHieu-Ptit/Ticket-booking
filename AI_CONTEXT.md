@@ -64,11 +64,13 @@ The system is a high-concurrency ticket booking application designed to handle a
   - Backend API endpoint `/api/v1/tickets/hold/cancel` to release PostgreSQL hold state, clear Redis cache keys, and push back ticket IDs.
   - Broadcast inventory updates instantly via Server-Sent Events (SSE).
   - Add "Cancel Reservation" button on Checkout Page and support redirection back to Home Page with purple cancellation banner.
+- [x] **TS-08: Hold Reclamation**
+  - Background worker in Go to poll and reclaim expired ticket holds in PostgreSQL if Redis notifications fail.
+  - Listening to Redis keyspace events (`__keyevent@0__:expired`) and running a periodic 10-second cron sweeper fail-safe.
+  - Broadcast inventory updates in real-time via SSE.
 
 ### Pending Tasks
 
-- [ ] **TS-08: Hold Reclamation**
-  - Background worker in Go to poll and reclaim expired ticket holds in PostgreSQL if Redis notifications fail.
 - [ ] **TS-09: Payment Checkout Backend**
   - Mock payment gateway integration.
   - Atomic database transaction to mark ticket as `Sold` and create an order record.
@@ -101,11 +103,11 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ## 6. Next Recommended Task
 
-### **`TS-07: Manual Cancellation`**
-- **Objective**: Implement the manual cancellation flow. Create the backend endpoint to release the held ticket, clearing its status in PostgreSQL, deleting the Redis hold key, returning the ticket ID to the available pool, and broadcasting the update. Add a "Cancel Reservation" button on the frontend Checkout Page.
-- **Why**: Allows users to release their ticket hold manually if they change their mind, immediately freeing up the inventory for others rather than waiting for the 5-minute timeout.
+### **`TS-09: Payment Checkout Backend`**
+- **Objective**: Implement checkout API endpoint to complete reservation purchases.
+- **Why**: Allows users to complete their purchases and transition their held tickets permanently to `Sold`, finalizing the main transaction path of the application.
 - **Steps**:
-  1. Register the `/api/v1/tickets/hold/cancel` POST route in `main.go`.
-  2. Implement `CancelHold` handler in `handlers.ReservationHandler` to release the PostgreSQL row, delete the Redis hold key, and push the ticket back to the availability pool.
-  3. Trigger the SSE broker to broadcast the inventory update.
-  4. Wire up the "Cancel Reservation" button on the frontend Checkout Page to call `bookingApi.cancelHold()` and redirect to the home page on success.
+  1. Implement `Checkout` controller, service, and repository operations under the `internal/modules/payment/` skeleton.
+  2. Implement Redis-backed idempotency middleware to enforce `Idempotency-Key` header constraints.
+  3. Wire up payment route `POST /api/v1/payments/checkout` in `main.go`.
+  4. Trigger SSE broker to broadcast sold-out/sales velocity metrics on checkout successes.

@@ -7,7 +7,7 @@ import (
 // Repository defines operations for reclaiming expired ticket holds.
 type Repository interface {
 	ReclaimExpiredHolds(ctx context.Context) (int64, error)
-	ReclaimSessionHold(ctx context.Context, sessionID string) error
+	ReclaimSessionHold(ctx context.Context, sessionID string) (string, error)
 }
 
 // Service defines background work operations.

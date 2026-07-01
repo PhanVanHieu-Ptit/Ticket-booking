@@ -28,6 +28,13 @@ func Init(redisURL string) (*redis.Client, error) {
 		return nil, fmt.Errorf("failed to ping Redis: %w", err)
 	}
 
+	// Enable Redis keyspace notifications for expired events dynamically.
+	// This generates __keyevent@0__:expired events on key timeouts.
+	if err := client.ConfigSet(ctx, "notify-keyspace-events", "Ex").Err(); err != nil {
+		logger.Warn("Failed to configure Redis keyspace notifications dynamically. "+
+			"Ensure notify-keyspace-events is set to 'Ex' manually in Redis config.", "error", err)
+	}
+
 	RDB = client
 	return client, nil
 }
