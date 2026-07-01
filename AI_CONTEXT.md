@@ -68,12 +68,13 @@ The system is a high-concurrency ticket booking application designed to handle a
   - Background worker in Go to poll and reclaim expired ticket holds in PostgreSQL if Redis notifications fail.
   - Listening to Redis keyspace events (`__keyevent@0__:expired`) and running a periodic 10-second cron sweeper fail-safe.
   - Broadcast inventory updates in real-time via SSE.
+- [x] **TS-09: Payment Checkout Backend**
+  - Mock payment gateway integration.
+  - Atomic database transaction to mark ticket as `Sold` and create an order record.
+  - Integrated Redis-backed request idempotency middleware.
 
 ### Pending Tasks
 
-- [ ] **TS-09: Payment Checkout Backend**
-  - Mock payment gateway integration.
-  - Atomic database transaction to mark ticket as `Sold` and create an order record.
 - [ ] **TS-10: Payment Checkout Frontend**
   - Checkout form and payment simulation.
   - Success/failure feedback screens.

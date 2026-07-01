@@ -1,8 +1,10 @@
 package payment
 
 import (
+	"database/sql"
+
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 // Module coordinates the payment package setup.
@@ -13,9 +15,9 @@ type Module struct {
 }
 
 // NewModule initializes all layers of the payment module.
-func NewModule(db *pgxpool.Pool) *Module {
+func NewModule(db *sql.DB, rdb *redis.Client) *Module {
 	repo := NewPaymentRepository(db)
-	svc := NewPaymentService(repo)
+	svc := NewPaymentService(repo, rdb)
 	ctrl := NewPaymentController(svc)
 
 	return &Module{

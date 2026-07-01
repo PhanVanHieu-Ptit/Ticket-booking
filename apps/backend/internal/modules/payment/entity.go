@@ -24,3 +24,15 @@ type Order struct {
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
 }
+
+// Ticket represents the minimal ticket database entity used by the payment module.
+type Ticket struct {
+	ID         int64
+	TicketCode string
+	Category   string
+	Price      float64
+	Status     string
+	SessionID  *string
+	ExpiresAt  *time.Time
+}
+

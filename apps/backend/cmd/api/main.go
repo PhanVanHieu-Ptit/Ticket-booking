@@ -7,6 +7,7 @@ import (
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/handlers"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/middleware"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/modules/payment"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/modules/reclamation"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
@@ -95,6 +96,7 @@ func main() {
 	adminHandler := handlers.NewAdminHandler(database, []byte(cfg.JWTSecret))
 	availabilityHandler := handlers.NewAvailabilityHandler(database, rdb, sse.GlobalBroker, []byte(cfg.JWTSecret))
 	reservationHandler := handlers.NewReservationHandler(database, rdb, []byte(cfg.JWTSecret))
+	paymentModule := payment.NewModule(database, rdb)
 
 	// Base API route group
 	api := r.Group("/api")
@@ -140,6 +142,9 @@ func main() {
 		v1.POST("/tickets/reserve", reservationHandler.ReserveTicket)
 		v1.GET("/tickets/hold", reservationHandler.GetActiveHold)
 		v1.POST("/tickets/hold/cancel", reservationHandler.CancelHold)
+
+		// Payment endpoints
+		v1.POST("/payments/checkout", middleware.IdempotencyMiddleware(rdb), paymentModule.Controller.Checkout)
 
 		// Admin route group
 		admin := v1.Group("/admin")

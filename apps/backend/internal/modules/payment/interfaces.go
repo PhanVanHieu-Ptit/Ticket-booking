@@ -2,11 +2,15 @@ package payment
 
 import (
 	"context"
+	"database/sql"
 )
 
 // Repository defines data store operations for payments/orders.
 type Repository interface {
-	CreateOrder(ctx context.Context, order *Order) error
+	GetDB() *sql.DB
+	LockTicket(ctx context.Context, tx *sql.Tx, ticketID int64) (*Ticket, error)
+	UpdateTicketStatus(ctx context.Context, tx *sql.Tx, ticketID int64, status string) error
+	CreateOrder(ctx context.Context, tx *sql.Tx, order *Order) error
 }
 
 // Service defines business logic operations for payments/orders.

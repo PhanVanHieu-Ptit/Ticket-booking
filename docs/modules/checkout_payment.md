@@ -57,9 +57,9 @@ To securely transition temporarily held tickets into permanently owned tickets u
 
 - **`orders`**: Owns the orders table.
   - Columns: `id` (UUID), `ticket_id` (foreign key), `session_id`, `amount`, `status` (`Paid`, `Refunded`, `Failed`), `email`, `card_holder_name`, `payment_reference` (unique), `created_at`, `updated_at`.
-  - Constraints: Unique constraint on `session_id` (enforces 1 purchase per session) and unique constraint on `ticket_id` (prevents multiple orders for a single ticket).
+  - Constraints: Unique constraint on `session_id` (enforces 1 purchase per session). Note: There is no unique constraint on `ticket_id` to allow failed/retry order attempts on a ticket.
 
 ### Redis
 
 - **`purchased:sessions`**: A Set containing session IDs that have completed a purchase. Used for O(1) checks during the reservation phase.
-- **`idempotency:{session_id}:{idempotency_key}`**: A String storing the status (`PENDING` or `RESOLVED`) and the cached response payload of a transaction, with a TTL (e.g., 2 hours).
+- **`idempotency:{session_id}:{idempotency_key}`**: A String storing the status (`PENDING` or `RESOLVED`) and the cached response payload of a transaction, with a TTL of 1 hour.
