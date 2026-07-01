@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/handlers"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/middleware"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/modules/reclamation"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/config"
@@ -57,6 +59,11 @@ func main() {
 	sse.GlobalBroker = sse.NewBroker()
 	sse.GlobalBroker.Start()
 	logger.Info("SSE Event Broker started successfully")
+
+	// Initialize and start Reclamation module background workers
+	reclaimModule := reclamation.NewModule(database, rdb)
+	reclaimModule.StartBackgroundJobs(context.Background())
+	logger.Info("Reclamation background workers started successfully")
 
 	// Set Gin mode based on config
 	gin.SetMode(cfg.GinMode)

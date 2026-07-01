@@ -2,8 +2,8 @@ package reclamation
 
 import (
 	"context"
+	"database/sql"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -14,9 +14,9 @@ type Module struct {
 }
 
 // NewModule initializes all layers of the reclamation module.
-func NewModule(db *pgxpool.Pool, redis *redis.Client) *Module {
+func NewModule(db *sql.DB, redis *redis.Client) *Module {
 	repo := NewReclamationRepository(db, redis)
-	svc := NewReclamationService(repo)
+	svc := NewReclamationService(repo, redis)
 
 	return &Module{
 		Repo:    repo,
