@@ -57,12 +57,12 @@ The system is a high-concurrency ticket booking application designed to handle a
 - [x] **TS-05: Ticket Reservation Backend**
   - Redis Lua script for atomic ticket popping and reservation.
   - PostgreSQL transaction to sync the reservation (`Holding` state, 5-minute TTL).
+- [x] **TS-06: Ticket Reservation Frontend**
+  - Booking page UI with seat category selection.
+  - Debounced reservation button and 5-minute countdown timer.
 
 ### Pending Tasks
 
-- [ ] **TS-06: Ticket Reservation Frontend**
-  - Booking page UI with seat category selection.
-  - Debounced reservation button and 5-minute countdown timer.
 - [ ] **TS-07: Manual Cancellation**
   - API and UI to allow users to release their ticket hold before the 5-minute expiration.
 - [ ] **TS-08: Hold Reclamation**
@@ -99,11 +99,11 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ## 6. Next Recommended Task
 
-### **`TS-06: Ticket Reservation Frontend`**
-- **Objective**: Connect the frontend "Reserve" buttons to the `/api/v1/tickets/reserve` API, implement route routing for `/checkout`, and create the countdown timer and expiration handling mechanisms on the checkout page.
-- **Why**: Allows users to interactively reserve tickets from the UI and experience the full checkout flow.
+### **`TS-07: Manual Cancellation`**
+- **Objective**: Implement the manual cancellation flow. Create the backend endpoint to release the held ticket, clearing its status in PostgreSQL, deleting the Redis hold key, returning the ticket ID to the available pool, and broadcasting the update. Add a "Cancel Reservation" button on the frontend Checkout Page.
+- **Why**: Allows users to release their ticket hold manually if they change their mind, immediately freeing up the inventory for others rather than waiting for the 5-minute timeout.
 - **Steps**:
-  1. Add routing path `/checkout` in React.
-  2. Implement Checkout Page UI shell with a countdown timer.
-  3. Fetch active hold on page refresh using `GET /api/v1/tickets/hold`.
-  4. Show overlay expiration modal when countdown reaches `00:00`.
+  1. Register the `/api/v1/tickets/hold/cancel` POST route in `main.go`.
+  2. Implement `CancelHold` handler in `handlers.ReservationHandler` to release the PostgreSQL row, delete the Redis hold key, and push the ticket back to the availability pool.
+  3. Trigger the SSE broker to broadcast the inventory update.
+  4. Wire up the "Cancel Reservation" button on the frontend Checkout Page to call `bookingApi.cancelHold()` and redirect to the home page on success.
