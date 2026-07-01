@@ -87,6 +87,7 @@ func main() {
 	sessionHandler := handlers.NewSessionHandler()
 	adminHandler := handlers.NewAdminHandler(database, []byte(cfg.JWTSecret))
 	availabilityHandler := handlers.NewAvailabilityHandler(database, rdb, sse.GlobalBroker, []byte(cfg.JWTSecret))
+	reservationHandler := handlers.NewReservationHandler(database, rdb, []byte(cfg.JWTSecret))
 
 	// Base API route group
 	api := r.Group("/api")
@@ -127,6 +128,10 @@ func main() {
 		// Availability endpoints
 		v1.GET("/tickets/availability", availabilityHandler.GetAvailability)
 		v1.GET("/tickets/availability/stream", availabilityHandler.StreamAvailability)
+
+		// Reservation endpoints
+		v1.POST("/tickets/reserve", reservationHandler.ReserveTicket)
+		v1.GET("/tickets/hold", reservationHandler.GetActiveHold)
 
 		// Admin route group
 		admin := v1.Group("/admin")

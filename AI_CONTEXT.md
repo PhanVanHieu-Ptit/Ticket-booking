@@ -54,12 +54,12 @@ The system is a high-concurrency ticket booking application designed to handle a
   - Server-Sent Events (SSE) endpoint to stream inventory updates.
 - [x] **TS-04: Ticket Availability Frontend**
   - React integration with the SSE endpoint to display live, real-time ticket counts.
+- [x] **TS-05: Ticket Reservation Backend**
+  - Redis Lua script for atomic ticket popping and reservation.
+  - PostgreSQL transaction to sync the reservation (`Holding` state, 5-minute TTL).
 
 ### Pending Tasks
 
-- [ ] **TS-05: Ticket Reservation Backend**
-  - Redis Lua script for atomic ticket popping and reservation.
-  - PostgreSQL transaction to sync the reservation (`Holding` state, 5-minute TTL).
 - [ ] **TS-06: Ticket Reservation Frontend**
   - Booking page UI with seat category selection.
   - Debounced reservation button and 5-minute countdown timer.
@@ -99,11 +99,11 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ## 6. Next Recommended Task
 
-### **`TS-05: Ticket Reservation Backend`**
-- **Objective**: Implement the atomic check-and-hold reservation logic to handle high-concurrency spikes.
-- **Why**: Prerequisite to allowing users to lock tickets from the frontend and proceed to payment.
+### **`TS-06: Ticket Reservation Frontend`**
+- **Objective**: Connect the frontend "Reserve" buttons to the `/api/v1/tickets/reserve` API, implement route routing for `/checkout`, and create the countdown timer and expiration handling mechanisms on the checkout page.
+- **Why**: Allows users to interactively reserve tickets from the UI and experience the full checkout flow.
 - **Steps**:
-  1. Write the `reserve.lua` atomic check-and-hold Redis Lua script.
-  2. Implement backend endpoint `POST /api/v1/tickets/reserve` with database transaction synchronization.
-  3. Write fallback/rollback logic to recycle Redis tickets if PostgreSQL commits fail.
-  4. Expose `GET /api/v1/tickets/hold` to retrieve active hold states.
+  1. Add routing path `/checkout` in React.
+  2. Implement Checkout Page UI shell with a countdown timer.
+  3. Fetch active hold on page refresh using `GET /api/v1/tickets/hold`.
+  4. Show overlay expiration modal when countdown reaches `00:00`.
