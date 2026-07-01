@@ -1,15 +1,17 @@
 import React from "react";
-import { Ticket } from "lucide-react";
+import { Ticket, Loader2 } from "lucide-react";
 import { TicketCategoryAvailability } from "../modules/booking/booking.api";
 
 interface TicketCategoryCardProps {
   category: TicketCategoryAvailability;
   onReserve: (categoryName: string) => void;
+  isReserving?: boolean;
 }
 
 export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
   category,
   onReserve,
+  isReserving = false,
 }) => {
   const { name, price, available, total, status } = category;
   const isSoldOut = available <= 0 || status === "Sold Out";
@@ -27,7 +29,9 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
   const progressColorClass = isVip
     ? "bg-gradient-to-r from-primary to-purple-500"
     : "bg-neutral-600";
-  const buttonClass = isSoldOut
+  
+  const isDisabled = isSoldOut || isReserving;
+  const buttonClass = isDisabled
     ? "bg-neutral-800 text-neutral-500 cursor-not-allowed border border-white/5"
     : isVip
     ? "bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 hover:scale-[1.02]"
@@ -79,12 +83,21 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
           </div>
         </div>
         <button
-          onClick={() => !isSoldOut && onReserve(name)}
-          disabled={isSoldOut}
+          onClick={() => !isDisabled && onReserve(name)}
+          disabled={isDisabled}
           className={`w-full py-3 px-4 font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${buttonClass}`}
         >
-          <Ticket className="w-5 h-5" />
-          {isSoldOut ? "Sold Out" : `Reserve ${name} Ticket`}
+          {isReserving ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Reserving...</span>
+            </>
+          ) : (
+            <>
+              <Ticket className="w-5 h-5" />
+              <span>{isSoldOut ? "Sold Out" : `Reserve ${name} Ticket`}</span>
+            </>
+          )}
         </button>
       </div>
     </div>
