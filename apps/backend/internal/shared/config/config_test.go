@@ -10,6 +10,7 @@ func TestConfig_Load(t *testing.T) {
 	t.Setenv("DIRECT_DATABASE_URL", "postgres://localhost:5433/db")
 	t.Setenv("REDIS_URL", "redis://localhost:6379")
 	t.Setenv("ADMIN_TOKEN", "super-secret")
+	t.Setenv("JWT_SECRET", "jwt-secret")
 	t.Setenv("PORT", "9090")
 	t.Setenv("APP_ENV", "testing")
 
@@ -41,6 +42,7 @@ func TestConfig_Validation(t *testing.T) {
 	t.Setenv("DIRECT_DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "")
 	t.Setenv("ADMIN_TOKEN", "")
+	t.Setenv("JWT_SECRET", "")
 
 	_, err := Load()
 	if err == nil {
