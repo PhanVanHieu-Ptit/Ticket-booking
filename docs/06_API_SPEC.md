@@ -377,15 +377,14 @@ Submit payment details to finalize the ticket purchase.
   - **Response Body**:
     ```json
     {
-      "order_id": "d3b07384-d113-4ec5-a5d7-0a1f1a23c345",
-      "ticket_id": 105,
-      "ticket_code": "TKT-VIP-8F2A9D3C",
-      "category": "VIP",
-      "amount": 100.0,
-      "status": "Paid",
-      "email": "buyer@example.com",
-      "payment_reference": "TXN-SIM-9F8372B8D3",
-      "created_at": "2026-06-30T17:10:12Z"
+      "success": true,
+      "data": {
+        "order_id": "d3b07384-d113-4ec5-a5d7-0a1f1a23c345",
+        "ticket_id": 105,
+        "amount": 100.0,
+        "payment_reference": "PAY-d3b07384-d113-4ec5-a5d7-0a1f1a23c345",
+        "paid_at": "2026-06-30T17:10:12Z"
+      }
     }
     ```
 - **Response (Errors)**:
