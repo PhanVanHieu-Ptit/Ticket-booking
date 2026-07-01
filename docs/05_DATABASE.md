@@ -29,7 +29,7 @@ erDiagram
 
     ORDERS {
         uuid id PK "UUIDv4 Order Identifier"
-        int ticket_id FK, UK "Unique reference to the ticket"
+        int ticket_id FK "Reference to the ticket"
         varchar session_id UK "Session that completed the purchase"
         numeric amount "Total paid amount"
         varchar status "Paid | Refunded | Failed"
@@ -48,7 +48,7 @@ erDiagram
     }
 
     %% Relationships
-    TICKETS ||--o| ORDERS : "purchased_via (1:0..1)"
+    TICKETS ||--o{ ORDERS : "purchased_via (1:0..N)"
 
     %% Conceptual Redis Concurrency Shield mapping
     subgraph Redis Shield [In-Memory Concurrency Shield]
@@ -87,7 +87,7 @@ This table records completed purchases. A successful payment creates a record he
 | Column Name         | Data Type       | Nullable | Default             | Constraints / Indexes   | Description                                             |
 | :------------------ | :-------------- | :------- | :------------------ | :---------------------- | :------------------------------------------------------ |
 | `id`                | `UUID`          | No       | `gen_random_uuid()` | `PRIMARY KEY`           | Unique transaction ID.                                  |
-| `ticket_id`         | `INT`           | No       | None                | `FOREIGN KEY`, `UNIQUE` | Reference to the purchased ticket.                      |
+| `ticket_id`         | `INT`           | No       | None                | `FOREIGN KEY`           | Reference to the purchased ticket.                      |
 | `session_id`        | `VARCHAR(255)`  | No       | None                | `UNIQUE`                | Enforces the "1 purchase per session" rule.             |
 | `amount`            | `NUMERIC(10,2)` | No       | None                | `CHECK (>= 0)`          | Amount paid for the ticket.                             |
 | `status`            | `VARCHAR(20)`   | No       | `'Paid'`            | `CHECK`                 | Order status: `Paid`, `Refunded`, `Failed`.             |
@@ -353,8 +353,6 @@ We recommend using a lightweight migration tool like `golang-migrate` (for Go) o
 #### Migration 1: Up (`0001_init_db.up.sql`)
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 CREATE TABLE tickets (
     id SERIAL PRIMARY KEY,
     ticket_code VARCHAR(64) UNIQUE NOT NULL,
@@ -379,7 +377,7 @@ CREATE TABLE tickets (
 
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    ticket_id INT UNIQUE NOT NULL,
+    ticket_id INT NOT NULL,
     session_id VARCHAR(255) UNIQUE NOT NULL,
     amount NUMERIC(10, 2) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'Paid',
@@ -405,6 +403,7 @@ CREATE TABLE admin_configs (
 CREATE UNIQUE INDEX idx_tickets_session_id_unique ON tickets(session_id) WHERE session_id IS NOT NULL;
 CREATE INDEX idx_tickets_expires_at_holding ON tickets(expires_at) WHERE status = 'Holding';
 CREATE INDEX idx_tickets_status_category ON tickets(status, category);
+CREATE INDEX idx_orders_email ON orders(email);
 ```
 
 #### Migration 1: Down (`0001_init_db.down.sql`)

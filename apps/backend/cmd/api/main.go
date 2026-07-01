@@ -9,6 +9,7 @@ import (
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/config"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/db"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
 	"github.com/gin-gonic/gin"
@@ -25,8 +26,6 @@ func main() {
 	logger.Init(cfg.AppEnv)
 	logger.Info("Starting Ticket Booking API Server...", "env", cfg.AppEnv, "port", cfg.Port)
 
-<<<<<<< Updated upstream
-=======
 	// Initialize database connection pool
 	database, err := db.Init(cfg.DatabaseURL)
 	if err != nil {
@@ -59,7 +58,6 @@ func main() {
 	sse.GlobalBroker.Start()
 	logger.Info("SSE Event Broker started successfully")
 
->>>>>>> Stashed changes
 	// Set Gin mode based on config
 	gin.SetMode(cfg.GinMode)
 
@@ -95,8 +93,6 @@ func main() {
 	{
 		// Health check endpoint using standard response envelope
 		api.GET("/health", func(c *gin.Context) {
-<<<<<<< Updated upstream
-=======
 			dbStatus := "healthy"
 			if err := database.Ping(); err != nil {
 				dbStatus = "unhealthy"
@@ -109,19 +105,13 @@ func main() {
 				logger.Error("Redis health check ping failed", "error", err)
 			}
 
->>>>>>> Stashed changes
 			c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{
 				"status":      "healthy",
 				"version":     "1.0.0-foundation",
 				"environment": cfg.AppEnv,
 				"services": gin.H{
-<<<<<<< Updated upstream
-					"database": "mocked_healthy",
-					"redis":    "mocked_healthy",
-=======
 					"database": dbStatus,
 					"redis":    redisStatus,
->>>>>>> Stashed changes
 				},
 			}))
 		})

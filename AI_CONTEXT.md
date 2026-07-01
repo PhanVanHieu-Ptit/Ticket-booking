@@ -19,7 +19,7 @@ The system is a high-concurrency ticket booking application designed to handle a
 │   │   ├── db/              # Migrations and Seeds
 │   │   └── internal/shared/ # Shared utilities (logger, validator, db, config)
 │   └── frontend/            # React (Vite + TS + Tailwind) client application
-├── docs/                    # Architecture, specs, and task definitions
+│   └── docs/                # Architecture, specs, and task definitions
 └── docker/                  # Docker configuration (PgBouncer, etc.)
 ```
 
@@ -46,18 +46,17 @@ The system is a high-concurrency ticket booking application designed to handle a
   - Implemented backend foundation layer (structured logging, custom error codes, request validation, environment configuration).
   - Integrated `pgx/v5` with simple protocol mode to ensure PgBouncer transaction mode compatibility.
   - Added performance index on `orders(email)`.
+- [x] **TS-02: Session Management**
+  - Backend: Stateless JWT session cookie generation and verification middleware.
+  - Frontend: Automatically request and store the session token on initial load (completed via standard HTTP cookie mechanisms upon initial REST fetch).
 - [x] **TS-03: Ticket Availability Backend**
   - Redis integration for real-time ticket availability counts.
   - Server-Sent Events (SSE) endpoint to stream inventory updates.
+- [x] **TS-04: Ticket Availability Frontend**
+  - React integration with the SSE endpoint to display live, real-time ticket counts.
 
 ### Pending Tasks
 
-- [/] **TS-02: Session Management** (Prerequisite for all booking actions)
-  - [x] Backend: Stateless JWT session cookie generation and verification middleware.
-  - [ ] Frontend: Automatically request and store the session token on initial load.
-
-- [ ] **TS-04: Ticket Availability Frontend**
-  - React integration with the SSE endpoint to display live, real-time ticket counts.
 - [ ] **TS-05: Ticket Reservation Backend**
   - Redis Lua script for atomic ticket popping and reservation.
   - PostgreSQL transaction to sync the reservation (`Holding` state, 5-minute TTL).
@@ -100,11 +99,11 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ## 6. Next Recommended Task
 
-### **`TS-04: Ticket Availability Frontend`**
-- **Objective**: Connect the React frontend application to the SSE availability stream.
-- **Why**: Enables reactive, real-time ticket availability count display on the event home page.
+### **`TS-05: Ticket Reservation Backend`**
+- **Objective**: Implement the atomic check-and-hold reservation logic to handle high-concurrency spikes.
+- **Why**: Prerequisite to allowing users to lock tickets from the frontend and proceed to payment.
 - **Steps**:
-  1. Build `useTicketAvailability` custom hook with EventSource connection and visibility listener.
-  2. Implement `TicketCategoryCard` component and home page layout.
-  3. Validate real-time inventory counter updates.
-
+  1. Write the `reserve.lua` atomic check-and-hold Redis Lua script.
+  2. Implement backend endpoint `POST /api/v1/tickets/reserve` with database transaction synchronization.
+  3. Write fallback/rollback logic to recycle Redis tickets if PostgreSQL commits fail.
+  4. Expose `GET /api/v1/tickets/hold` to retrieve active hold states.

@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS admin_configs;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS tickets;
