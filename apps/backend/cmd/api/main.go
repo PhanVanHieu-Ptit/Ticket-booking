@@ -132,6 +132,7 @@ func main() {
 		// Reservation endpoints
 		v1.POST("/tickets/reserve", reservationHandler.ReserveTicket)
 		v1.GET("/tickets/hold", reservationHandler.GetActiveHold)
+		v1.POST("/tickets/hold/cancel", reservationHandler.CancelHold)
 
 		// Admin route group
 		admin := v1.Group("/admin")

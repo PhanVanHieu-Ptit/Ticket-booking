@@ -334,7 +334,16 @@ Manually release the active hold, returning the ticket to the available pool imm
   - `Cookie: session_token=<JWT>` (Required)
 - **Request Body**: None
 - **Response**:
-  - **Status**: `204 No Content`
+  - **Status**: `200 OK`
+  - **Response Body**:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "message": "Reservation cancelled successfully"
+      }
+    }
+    ```
 
 ---
 

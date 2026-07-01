@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Flame, Clock, Layers, ShieldAlert, AlertTriangle } from "lucide-react";
 import { useTicketAvailability } from "../../hooks/useTicketAvailability";
 import { TicketCategoryCard } from "../../components/TicketCategoryCard";
@@ -7,10 +7,20 @@ import { bookingApi } from "./booking.api";
 
 export const BookingPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { categories, loading, error, isConnected } = useTicketAvailability();
   
   const [reservingCategory, setReservingCategory] = useState<string | null>(null);
   const [reserveError, setReserveError] = useState<string | null>(null);
+  const [cancellationMessage, setCancellationMessage] = useState<string | null>(
+    location.state?.message || null
+  );
+
+  useEffect(() => {
+    if (location.state?.message) {
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location, navigate]);
 
   const totalAvailable = categories.reduce((sum, cat) => sum + cat.available, 0);
   const isEventSoldOut = !loading && categories.length > 0 && totalAvailable === 0;
@@ -46,6 +56,21 @@ export const BookingPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-red-950/30 border border-red-500/30 text-red-200 text-center font-semibold flex items-center justify-center gap-2">
           <AlertTriangle className="w-5 h-5 text-red-400" />
           <span>{reserveError}</span>
+        </div>
+      )}
+
+      {cancellationMessage && (
+        <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-500/30 text-purple-200 text-center font-semibold flex items-center justify-between gap-2 animate-fade-in shadow-lg shadow-purple-950/20">
+          <div className="flex items-center gap-2 mx-auto">
+            <ShieldAlert className="w-5 h-5 text-primary" />
+            <span>{cancellationMessage}</span>
+          </div>
+          <button 
+            onClick={() => setCancellationMessage(null)}
+            className="text-neutral-400 hover:text-white transition-colors text-lg font-bold px-1"
+          >
+            ×
+          </button>
         </div>
       )}
 

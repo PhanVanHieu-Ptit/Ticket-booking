@@ -105,6 +105,7 @@ func TestReservationFlow(t *testing.T) {
 
 	r.POST("/api/v1/tickets/reserve", handler.ReserveTicket)
 	r.GET("/api/v1/tickets/hold", handler.GetActiveHold)
+	r.POST("/api/v1/tickets/hold/cancel", handler.CancelHold)
 
 	// Cleanup on exit
 	defer func() {
@@ -324,6 +325,86 @@ func TestReservationFlow(t *testing.T) {
 
 		if resp.Error.Code != "LIMIT_EXCEEDED" && resp.Error.Code != "PURCHASE_LIMIT_EXCEEDED" {
 			t.Errorf("expected error code PURCHASE_LIMIT_EXCEEDED, got %s", resp.Error.Code)
+		}
+	})
+
+	// CASE 7: Cancel Reservation Success
+	t.Run("Cancel Reservation Success", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tickets/hold/cancel", nil)
+		req.Header.Set("X-Test-Session-ID", "sess_test_success")
+
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200 OK, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp struct {
+			Success bool `json:"success"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to parse response: %v", err)
+		}
+
+		if !resp.Success {
+			t.Error("expected response.success to be true")
+		}
+
+		// Verify database state: status should be 'Available', session_id, held_at, expires_at should be NULL
+		var dbStatus string
+		var dbSessionID sql.NullString
+		err := dbConn.QueryRowContext(ctx, "SELECT status, session_id FROM tickets WHERE id = $1", vipTicketID).Scan(&dbStatus, &dbSessionID)
+		if err != nil {
+			t.Fatalf("failed to query ticket state from PostgreSQL: %v", err)
+		}
+		if dbStatus != "Available" || dbSessionID.Valid {
+			t.Errorf("PostgreSQL ticket was not released correctly: status=%s, session_id=%v", dbStatus, dbSessionID)
+		}
+
+		// Verify Redis hold key is deleted
+		exists, err := rdb.Exists(ctx, "hold:sess_test_success").Result()
+		if err != nil {
+			t.Fatalf("failed to query Redis hold key: %v", err)
+		}
+		if exists > 0 {
+			t.Error("expected Redis hold key to be deleted")
+		}
+
+		// Verify Redis available set contains the ticket ID again
+		isMember, err := rdb.SIsMember(ctx, "tickets:available:VIP", vipTicketID).Result()
+		if err != nil {
+			t.Fatalf("failed to query Redis available set: %v", err)
+		}
+		if !isMember {
+			t.Error("expected VIP ticket ID to be returned to tickets:available:VIP set")
+		}
+	})
+
+	// CASE 8: Cancel Reservation Not Found / No Active Hold
+	t.Run("Cancel Reservation Not Found", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tickets/hold/cancel", nil)
+		req.Header.Set("X-Test-Session-ID", "sess_test_nohold")
+
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400 Bad Request, got %d. Body: %s", w.Code, w.Body.String())
+		}
+
+		var resp struct {
+			Success bool `json:"success"`
+			Error   struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to parse response: %v", err)
+		}
+
+		if resp.Error.Code != "NO_ACTIVE_HOLD" {
+			t.Errorf("expected error code NO_ACTIVE_HOLD, got %s", resp.Error.Code)
 		}
 	})
 }

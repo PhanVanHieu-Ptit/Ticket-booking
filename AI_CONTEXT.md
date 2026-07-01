@@ -60,11 +60,13 @@ The system is a high-concurrency ticket booking application designed to handle a
 - [x] **TS-06: Ticket Reservation Frontend**
   - Booking page UI with seat category selection.
   - Debounced reservation button and 5-minute countdown timer.
+- [x] **TS-07: Manual Cancellation**
+  - Backend API endpoint `/api/v1/tickets/hold/cancel` to release PostgreSQL hold state, clear Redis cache keys, and push back ticket IDs.
+  - Broadcast inventory updates instantly via Server-Sent Events (SSE).
+  - Add "Cancel Reservation" button on Checkout Page and support redirection back to Home Page with purple cancellation banner.
 
 ### Pending Tasks
 
-- [ ] **TS-07: Manual Cancellation**
-  - API and UI to allow users to release their ticket hold before the 5-minute expiration.
 - [ ] **TS-08: Hold Reclamation**
   - Background worker in Go to poll and reclaim expired ticket holds in PostgreSQL if Redis notifications fail.
 - [ ] **TS-09: Payment Checkout Backend**
