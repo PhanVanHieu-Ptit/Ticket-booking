@@ -1,8 +1,18 @@
 import { useState } from 'react';
-import { Ticket, ShieldAlert, BarChart3, Clock, Flame, CreditCard, Layers } from 'lucide-react';
+import { Ticket, ShieldAlert, BarChart3, Clock, Flame, CreditCard, Layers, AlertTriangle } from 'lucide-react';
+import { useTicketAvailability } from './hooks/useTicketAvailability';
+import { TicketCategoryCard } from './components/TicketCategoryCard';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'admin'>('home');
+  const { categories, loading, error, isConnected } = useTicketAvailability();
+
+  const totalAvailable = categories.reduce((sum, cat) => sum + cat.available, 0);
+  const isEventSoldOut = !loading && categories.length > 0 && totalAvailable === 0;
+
+  const handleReserve = (categoryName: string) => {
+    console.log(`Reserving ticket for ${categoryName}`);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-primary selection:text-white">
@@ -52,13 +62,29 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8">
         {activeTab === 'home' ? (
           <div className="space-y-8 animate-fade-in">
+            {isEventSoldOut && (
+              <div className="p-4 rounded-xl bg-red-950/30 border border-red-500/30 text-red-200 text-center font-bold flex items-center justify-center gap-2 animate-pulse shadow-lg shadow-red-950/20">
+                <AlertTriangle className="w-5 h-5 text-red-400 animate-bounce" />
+                <span>ALL TICKETS SOLD OUT: Neon Symphony 2026 is fully booked!</span>
+              </div>
+            )}
             {/* Hero Section */}
             <div className="relative overflow-hidden rounded-3xl glass-premium p-8 md:p-12 flex flex-col md:flex-row gap-8 items-center justify-between">
               <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl -z-10" />
               <div className="space-y-4 max-w-xl text-center md:text-left">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/20 border border-primary/30 text-primary uppercase tracking-wider">
-                  <Flame className="w-3.5 h-3.5" /> Live Concert Event
-                </span>
+                <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/20 border border-primary/30 text-primary uppercase tracking-wider">
+                    <Flame className="w-3.5 h-3.5" /> Live Concert Event
+                  </span>
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                    isConnected 
+                      ? 'bg-green-500/10 text-green-400 border-green-500/20' 
+                      : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 animate-pulse'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-400' : 'bg-yellow-400'}`} />
+                    {isConnected ? 'Syncing Live' : 'Reconnecting...'}
+                  </span>
+                </div>
                 <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight">
                   Neon Symphony: <br />
                   <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-400">
@@ -116,79 +142,47 @@ export default function App() {
               </div>
             </div>
 
-            {/* Ticket Categories (Mockup Grid) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* VIP Category */}
-              <div className="relative overflow-hidden rounded-2xl glass p-6 border border-primary/20 hover:border-primary/40 transition-all group flex flex-col justify-between space-y-6">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-2xl" />
-                <div className="space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold text-primary uppercase tracking-widest px-2 py-0.5 bg-primary/10 rounded border border-primary/20">
-                        Premium
-                      </span>
-                      <h3 className="text-2xl font-bold mt-2">VIP Experience</h3>
+            {/* Ticket Categories (Dynamic Grid) */}
+            {loading && categories.length === 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {[1, 2].map((i) => (
+                  <div key={i} className="h-72 rounded-2xl glass border border-white/5 animate-pulse flex flex-col justify-between p-6">
+                    <div className="space-y-4">
+                      <div className="h-6 w-24 bg-white/10 rounded" />
+                      <div className="h-8 w-48 bg-white/10 rounded" />
+                      <div className="h-16 w-full bg-white/10 rounded" />
                     </div>
-                    <span className="text-3xl font-extrabold text-primary">$150</span>
-                  </div>
-                  <p className="text-sm text-neutral-400">
-                    Front row access, private lounge entry, complimentary merchandise, and
-                    meet-and-greet options.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-xs font-semibold mb-1 text-neutral-300">
-                      <span>Inventory Remaining</span>
-                      <span>100 / 100 Available</span>
-                    </div>
-                    <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-primary to-purple-500 rounded-full w-full" />
+                    <div className="space-y-4">
+                      <div className="h-4 w-32 bg-white/10 rounded" />
+                      <div className="h-2 w-full bg-white/10 rounded" />
+                      <div className="h-12 w-full bg-white/10 rounded" />
                     </div>
                   </div>
-                  <button className="w-full py-3 px-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 group-hover:scale-[1.02]">
-                    <Ticket className="w-5 h-5" />
-                    Reserve VIP Ticket
-                  </button>
-                </div>
+                ))}
               </div>
-
-              {/* Standard Category */}
-              <div className="relative overflow-hidden rounded-2xl glass p-6 border border-white/5 hover:border-white/10 transition-all group flex flex-col justify-between space-y-6">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-2 py-0.5 bg-white/5 rounded border border-white/5">
-                        General Admission
-                      </span>
-                      <h3 className="text-2xl font-bold mt-2">Standard Pass</h3>
-                    </div>
-                    <span className="text-3xl font-extrabold text-neutral-200">$75</span>
-                  </div>
-                  <p className="text-sm text-neutral-400">
-                    Access to main standing arena, standard food and beverage stalls, and
-                    high-fidelity sound zones.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-xs font-semibold mb-1 text-neutral-300">
-                      <span>Inventory Remaining</span>
-                      <span>400 / 400 Available</span>
-                    </div>
-                    <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                      <div className="h-full bg-neutral-600 rounded-full w-full" />
-                    </div>
-                  </div>
-                  <button className="w-full py-3 px-4 bg-white/10 hover:bg-white/15 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 group-hover:scale-[1.02]">
-                    <Ticket className="w-5 h-5" />
-                    Reserve Standard Ticket
-                  </button>
-                </div>
+            ) : error && categories.length === 0 ? (
+              <div className="p-8 text-center rounded-2xl border border-red-500/20 bg-red-950/10 text-red-400">
+                <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-500 animate-bounce" />
+                <h4 className="font-bold text-lg">Error loading availability</h4>
+                <p className="text-sm text-neutral-400 mt-2">{error}</p>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-xs font-semibold rounded-lg transition"
+                >
+                  Retry Connection
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {categories.map((category) => (
+                  <TicketCategoryCard
+                    key={category.name}
+                    category={category}
+                    onReserve={handleReserve}
+                  />
+                ))}
+              </div>
+            )}
 
             {/* Note about concurrency shield */}
             <div className="flex items-start gap-4 p-4 rounded-xl bg-purple-950/20 border border-purple-500/20 max-w-3xl mx-auto">

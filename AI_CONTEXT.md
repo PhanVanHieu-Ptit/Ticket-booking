@@ -46,17 +46,17 @@ The system is a high-concurrency ticket booking application designed to handle a
   - Implemented backend foundation layer (structured logging, custom error codes, request validation, environment configuration).
   - Integrated `pgx/v5` with simple protocol mode to ensure PgBouncer transaction mode compatibility.
   - Added performance index on `orders(email)`.
+- [x] **TS-02: Session Management**
+  - Backend: Stateless JWT session cookie generation and verification middleware.
+  - Frontend: Automatically request and store the session token on initial load (completed via standard HTTP cookie mechanisms upon initial REST fetch).
 - [x] **TS-03: Ticket Availability Backend**
   - Redis integration for real-time ticket availability counts.
   - Server-Sent Events (SSE) endpoint to stream inventory updates.
+- [x] **TS-04: Ticket Availability Frontend**
+  - React integration with the SSE endpoint to display live, real-time ticket counts.
 
 ### Pending Tasks
 
-- [ ] **TS-02: Session Management** (Prerequisite for all booking actions)
-  - Backend: Stateless JWT session cookie generation and verification middleware.
-  - Frontend: Automatically request and store the session token on initial load.
-- [ ] **TS-04: Ticket Availability Frontend**
-  - React integration with the SSE endpoint to display live, real-time ticket counts.
 - [ ] **TS-05: Ticket Reservation Backend**
   - Redis Lua script for atomic ticket popping and reservation.
   - PostgreSQL transaction to sync the reservation (`Holding` state, 5-minute TTL).
@@ -99,10 +99,11 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ## 6. Next Recommended Task
 
-### **`TS-02: Session Management`**
-- **Objective**: Establish a secure, stateless session for every client.
-- **Why**: Both ticket reservation (`TS-05`) and checkout (`TS-09`) require a validated session ID to enforce the 1-ticket-per-session limit.
+### **`TS-05: Ticket Reservation Backend`**
+- **Objective**: Implement the atomic check-and-hold reservation logic to handle high-concurrency spikes.
+- **Why**: Prerequisite to allowing users to lock tickets from the frontend and proceed to payment.
 - **Steps**:
-  1. Implement JWT signing and validation helper functions in the backend.
-  2. Create a Gin middleware to inspect the `session_token` cookie and automatically inject a new signed JWT cookie if it is missing or expired.
-  3. Update the frontend to send credentials/cookies with all API requests.
+  1. Write the `reserve.lua` atomic check-and-hold Redis Lua script.
+  2. Implement backend endpoint `POST /api/v1/tickets/reserve` with database transaction synchronization.
+  3. Write fallback/rollback logic to recycle Redis tickets if PostgreSQL commits fail.
+  4. Expose `GET /api/v1/tickets/hold` to retrieve active hold states.
