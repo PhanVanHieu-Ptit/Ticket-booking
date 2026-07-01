@@ -19,7 +19,7 @@ The system is a high-concurrency ticket booking application designed to handle a
 │   │   ├── db/              # Migrations and Seeds
 │   │   └── internal/shared/ # Shared utilities (logger, validator, db, config)
 │   └── frontend/            # React (Vite + TS + Tailwind) client application
-├── docs/                    # Architecture, specs, and task definitions
+│   └── docs/                # Architecture, specs, and task definitions
 └── docker/                  # Docker configuration (PgBouncer, etc.)
 ```
 
@@ -52,10 +52,9 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ### Pending Tasks
 
-- [/] **TS-02: Session Management** (Prerequisite for all booking actions)
-  - [x] Backend: Stateless JWT session cookie generation and verification middleware.
-  - [ ] Frontend: Automatically request and store the session token on initial load.
-
+- [ ] **TS-02: Session Management** (Prerequisite for all booking actions)
+  - Backend: Stateless JWT session cookie generation and verification middleware.
+  - Frontend: Automatically request and store the session token on initial load.
 - [ ] **TS-04: Ticket Availability Frontend**
   - React integration with the SSE endpoint to display live, real-time ticket counts.
 - [ ] **TS-05: Ticket Reservation Backend**
@@ -100,11 +99,10 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ## 6. Next Recommended Task
 
-### **`TS-04: Ticket Availability Frontend`**
-- **Objective**: Connect the React frontend application to the SSE availability stream.
-- **Why**: Enables reactive, real-time ticket availability count display on the event home page.
+### **`TS-02: Session Management`**
+- **Objective**: Establish a secure, stateless session for every client.
+- **Why**: Both ticket reservation (`TS-05`) and checkout (`TS-09`) require a validated session ID to enforce the 1-ticket-per-session limit.
 - **Steps**:
-  1. Build `useTicketAvailability` custom hook with EventSource connection and visibility listener.
-  2. Implement `TicketCategoryCard` component and home page layout.
-  3. Validate real-time inventory counter updates.
-
+  1. Implement JWT signing and validation helper functions in the backend.
+  2. Create a Gin middleware to inspect the `session_token` cookie and automatically inject a new signed JWT cookie if it is missing or expired.
+  3. Update the frontend to send credentials/cookies with all API requests.
