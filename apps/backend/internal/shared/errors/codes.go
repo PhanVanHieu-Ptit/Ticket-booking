@@ -14,4 +14,12 @@ const (
 	ErrCodeSessionRequired = "SESSION_REQUIRED"
 	ErrCodeAdminUnauthorized = "ADMIN_UNAUTHORIZED"
 	ErrCodeInvalidSessionToken = "INVALID_SESSION_TOKEN"
+
+	// Ticket reservation specific error codes
+	ErrCodeActiveHoldExists    = "ACTIVE_HOLD_EXISTS"
+	ErrCodePurchaseLimitExceed = "PURCHASE_LIMIT_EXCEEDED"
+	ErrCodeInvalidCategory     = "INVALID_CATEGORY"
+	ErrCodeTicketUnavailable   = "TICKET_UNAVAILABLE"
+	ErrCodeNoActiveHold        = "NO_ACTIVE_HOLD"
+	ErrCodeReservationFailed   = "RESERVATION_FAILED"
 )

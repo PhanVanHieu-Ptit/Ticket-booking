@@ -53,7 +53,7 @@ sequenceDiagram
 
         alt DB Write Succeeds
             BE->>BE: Trigger Inventory Update Event (SSE)
-            BE-->>FE: 200 OK { ticket_id, category, expires_in_seconds: 300 }
+            BE-->>FE: 201 Created { ticket_id, ticket_code, category, price, status, held_at, expires_at, seconds_remaining }
             FE->>User: Redirect to /checkout and start 5-minute countdown
         else DB Write Fails (Exception / Timeout)
             BE->>Redis: Delete hold:{session_id} & Push ticket_id back to tickets:available:VIP (Rollback)
@@ -72,7 +72,7 @@ sequenceDiagram
    - If available and the session is eligible, it pops a ticket ID, sets the session hold key (`hold:{session_id}`) with a 300-second TTL, and returns success.
 5. **Database Persistence**: Upon receiving success from Redis, the backend starts a database transaction to update the ticket status in PostgreSQL to `Holding`, associating it with the `session_id`, `held_at` timestamp, and `expires_at` timestamp.
 6. **Error Rollback**: If the database update fails (e.g., database timeout), the backend rolls back the Redis state by deleting the hold key and returning the ticket ID to the available pool.
-7. **Success Response & Redirection**: If database persistence succeeds, the backend triggers an inventory update event (SSE) and returns a `200 OK` response. The frontend redirects the user to the Booking/Checkout Page, displaying a synchronized 5-minute countdown.
+7. **Success Response & Redirection**: If database persistence succeeds, the backend triggers an inventory update event (SSE) and returns a `201 Created` response. The frontend redirects the user to the Booking/Checkout Page, displaying a synchronized 5-minute countdown.
 
 ---
 
