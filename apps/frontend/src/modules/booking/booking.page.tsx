@@ -8,7 +8,7 @@ import { bookingApi } from "./booking.api";
 export const BookingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { categories, loading, error, isConnected } = useTicketAvailability();
+  const { categories, loading, error, isConnected, isDegraded } = useTicketAvailability();
   
   const [reservingCategory, setReservingCategory] = useState<string | null>(null);
   const [reserveError, setReserveError] = useState<string | null>(null);
@@ -33,8 +33,12 @@ export const BookingPage: React.FC = () => {
       navigate("/checkout");
     } catch (err: any) {
       // If the error indicates an active hold already exists, redirect directly to checkout page
-      if (err.message && (err.message.includes("active reservation") || err.message.includes("ACTIVE_HOLD_EXISTS"))) {
+      if (err.code === "ACTIVE_HOLD_EXISTS" || (err.message && err.message.includes("active reservation"))) {
         navigate("/checkout");
+      } else if (err.code === "TICKET_SOLD_OUT" || err.code === "TICKET_UNAVAILABLE") {
+        setReserveError("Sorry, this ticket just sold out. Please pick another category.");
+      } else if (err.code === "TIMEOUT") {
+        setReserveError("Slow connection, please try again.");
       } else {
         setReserveError(err.message || "Failed to reserve ticket. Please try again.");
       }
@@ -83,12 +87,16 @@ export const BookingPage: React.FC = () => {
               <Flame className="w-3.5 h-3.5" /> Live Concert Event
             </span>
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-              isConnected 
-                ? 'bg-green-500/10 text-green-400 border-green-500/20' 
-                : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 animate-pulse'
+              isConnected
+                ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                : isDegraded
+                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse'
+                  : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20 animate-pulse'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-400' : 'bg-yellow-400'}`} />
-              {isConnected ? 'Syncing Live' : 'Reconnecting...'}
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                isConnected ? 'bg-green-400' : isDegraded ? 'bg-orange-400' : 'bg-yellow-400'
+              }`} />
+              {isConnected ? 'Syncing Live' : isDegraded ? 'Slow Mode · Polling' : 'Reconnecting...'}
             </span>
           </div>
           <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight">

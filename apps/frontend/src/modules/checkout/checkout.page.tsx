@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Clock, CreditCard, User, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
 import { CheckoutLayout } from "./checkout.layout";
@@ -49,8 +49,14 @@ export const CheckoutPage: React.FC = () => {
   const navigate = useNavigate();
   const [holdDetails, setHoldDetails] = useState<ReservationDetails | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(300);
+  const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [expired, setExpired] = useState<boolean>(false);
+
+  // Client/server clock offset (ms), computed once from the first server_time we see.
+  const clockOffsetRef = useRef<number>(0);
+  const offsetInitializedRef = useRef<boolean>(false);
+  const verifyingExpiryRef = useRef<boolean>(false);
   const [email, setEmail] = useState<string>("");
   const [cardName, setCardName] = useState<string>("");
   const [cardNumber, setCardNumber] = useState<string>("");
@@ -63,6 +69,17 @@ export const CheckoutPage: React.FC = () => {
   const [cancelling, setCancelling] = useState<boolean>(false);
 
   const { isProcessing, processCheckout } = useCheckoutState();
+
+  // Kept in refs so the countdown's interval callback always sees the latest
+  // values without needing to be torn down/recreated on every change.
+  const isProcessingRef = useRef(isProcessing);
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
+  const cancellingRef = useRef(cancelling);
+  useEffect(() => {
+    cancellingRef.current = cancelling;
+  }, [cancelling]);
 
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValidationError(null);
@@ -102,16 +119,32 @@ export const CheckoutPage: React.FC = () => {
     }
   };
 
+  // Applies a fresh hold response: syncs the absolute expiry, the one-time
+  // clock offset (if not already computed), and the derived display state.
+  const applyHoldDetails = (details: ReservationDetails) => {
+    if (!offsetInitializedRef.current && details.server_time) {
+      const serverMs = new Date(details.server_time).getTime();
+      if (!Number.isNaN(serverMs)) {
+        clockOffsetRef.current = serverMs - Date.now();
+      }
+      offsetInitializedRef.current = true;
+    }
+
+    const expMs = new Date(details.expires_at).getTime();
+    const remaining = Number.isNaN(expMs)
+      ? 0
+      : Math.max(0, Math.round((expMs - (Date.now() + clockOffsetRef.current)) / 1000));
+
+    setHoldDetails(details);
+    setExpiresAtMs(Number.isNaN(expMs) ? null : expMs);
+    setSecondsRemaining(remaining);
+    setExpired(remaining <= 0);
+  };
+
   const fetchHold = async () => {
     try {
       const details = await bookingApi.getActiveHold();
-      setHoldDetails(details);
-      setSecondsRemaining(details.seconds_remaining);
-      if (details.seconds_remaining <= 0) {
-        setExpired(true);
-      } else {
-        setExpired(false);
-      }
+      applyHoldDetails(details);
     } catch (err: any) {
       // Redirect to home if there is no active hold found for this session
       navigate("/");
@@ -136,21 +169,41 @@ export const CheckoutPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (loading || expired || secondsRemaining <= 0) return;
+    if (loading || expired || expiresAtMs === null) return;
 
     const timer = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
+      const remaining = Math.ceil((expiresAtMs - (Date.now() + clockOffsetRef.current)) / 1000);
+
+      if (remaining > 0) {
+        setSecondsRemaining(remaining);
+        return;
+      }
+
+      // Countdown hit zero locally — don't trust it blindly (the tab may have
+      // been backgrounded, or the hold could have just been extended/consumed
+      // by a payment that's still in flight). Confirm with the server first.
+      if (verifyingExpiryRef.current || isProcessingRef.current || cancellingRef.current) {
+        return;
+      }
+
+      verifyingExpiryRef.current = true;
+      bookingApi
+        .getActiveHold()
+        .then((details) => {
+          // Server still reports an active hold (e.g. it was extended) — resync instead of expiring.
+          applyHoldDetails(details);
+        })
+        .catch(() => {
+          setSecondsRemaining(0);
           setExpired(true);
-          return 0;
-        }
-        return prev - 1;
-      });
+        })
+        .finally(() => {
+          verifyingExpiryRef.current = false;
+        });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [loading, expired, secondsRemaining]);
+  }, [loading, expired, expiresAtMs]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -215,8 +268,12 @@ export const CheckoutPage: React.FC = () => {
       const result = await processCheckout(payload, idempotencyKey);
       navigate("/confirmation", { state: { orderResult: result, holdDetails } });
     } catch (err: any) {
-      if (err.status === 410 || err.code === "RESERVATION_EXPIRED") {
+      if (err.status === 410 || err.code === "RESERVATION_EXPIRED" || err.code === "HOLD_EXPIRED") {
         setExpired(true);
+      } else if (err.code === "TICKET_SOLD_OUT" || err.code === "TICKET_UNAVAILABLE") {
+        setCheckoutError("Sorry, this ticket just sold out.");
+      } else if (err.code === "TIMEOUT") {
+        setCheckoutError("Slow connection, please try again.");
       } else {
         setCheckoutError(err.message || "Payment failed. Please check your card details and try again.");
       }

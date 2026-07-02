@@ -15,6 +15,7 @@ export interface ReservationDetails {
   held_at: string;
   expires_at: string;
   seconds_remaining: number;
+  server_time?: string;
 }
 
 export interface ApiResponse<T> {
@@ -47,19 +48,37 @@ export const bookingApi = {
   },
 
   reserveTicket: async (category: string): Promise<ReservationDetails> => {
-    const response = await fetch("/api/v1/tickets/reserve", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ category }),
-    });
-    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    let response: Response;
+    try {
+      response = await fetch("/api/v1/tickets/reserve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ category }),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        const timeoutErr = new Error("Slow connection, please try again.");
+        (timeoutErr as any).code = "TIMEOUT";
+        throw timeoutErr;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     if (!response.ok) {
       const errResult: ApiResponse<any> = await response.json().catch(() => ({ success: false }));
-      throw new Error(errResult.error?.message || "Failed to reserve ticket");
+      const errorObj = new Error(errResult.error?.message || "Failed to reserve ticket");
+      (errorObj as any).code = errResult.error?.code;
+      throw errorObj;
     }
-    
+
     const result: ApiResponse<ReservationDetails> = await response.json();
     return result.data;
   },

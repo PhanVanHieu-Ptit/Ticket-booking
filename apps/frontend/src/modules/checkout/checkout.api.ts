@@ -26,20 +26,36 @@ export interface ApiResponse<T> {
 
 export const checkoutApi = {
   checkout: async (payload: CheckoutPayload, idempotencyKey: string): Promise<CheckoutResult> => {
-    const response = await fetch("/api/v1/payments/checkout", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": idempotencyKey,
-      },
-      body: JSON.stringify({
-        ticket_id: payload.ticketId,
-        email: payload.email,
-        card_holder_name: payload.cardHolderName,
-        payment_method: payload.paymentMethod,
-        simulate_status: payload.simulateStatus,
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    let response: Response;
+    try {
+      response = await fetch("/api/v1/payments/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          ticket_id: payload.ticketId,
+          email: payload.email,
+          card_holder_name: payload.cardHolderName,
+          payment_method: payload.paymentMethod,
+          simulate_status: payload.simulateStatus,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        const timeoutErr = new Error("Slow connection, please try again.");
+        (timeoutErr as any).code = "TIMEOUT";
+        throw timeoutErr;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errResult: ApiResponse<any> = await response.json().catch(() => ({ success: false }));

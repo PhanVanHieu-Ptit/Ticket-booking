@@ -1,17 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { bookingApi, TicketCategoryAvailability } from "../modules/booking/booking.api";
 
+const POLL_INTERVAL_MS = 8000;
+
 export function useTicketAvailability() {
   const [categories, setCategories] = useState<TicketCategoryAvailability[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  // True while we've fallen back to REST polling because the SSE stream is down.
+  const [isDegraded, setIsDegraded] = useState<boolean>(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
   const reconnectDelayRef = useRef<number>(1000); // Initial reconnect delay (1s)
   const isTabActiveRef = useRef<boolean>(true);
   const tabInactiveTimeoutRef = useRef<any>(null);
+  const pollIntervalRef = useRef<any>(null);
 
   // Fetch initial counts from REST
   const fetchInitialAvailability = useCallback(async () => {
@@ -25,6 +30,23 @@ export function useTicketAvailability() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Fall back to polling the REST endpoint while the SSE stream is unavailable.
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current) return;
+    setIsDegraded(true);
+    pollIntervalRef.current = setInterval(() => {
+      fetchInitialAvailability();
+    }, POLL_INTERVAL_MS);
+  }, [fetchInitialAvailability]);
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    setIsDegraded(false);
   }, []);
 
   // Connect to SSE stream
@@ -41,6 +63,7 @@ export function useTicketAvailability() {
     es.onopen = () => {
       setIsConnected(true);
       reconnectDelayRef.current = 1000; // Reset delay on successful connection
+      stopPolling(); // Live stream is back, no need to keep polling
     };
 
     es.addEventListener("initial_state", (e: MessageEvent) => {
@@ -102,19 +125,22 @@ export function useTicketAvailability() {
       setIsConnected(false);
       es.close();
 
-      // Exponential backoff reconnection logic (cap at 30 seconds)
-      const delay = reconnectDelayRef.current;
-      reconnectDelayRef.current = Math.min(delay * 2, 30000);
-
-      // Only attempt reconnect if tab is active
+      // Only attempt reconnect/poll if tab is active
       if (isTabActiveRef.current) {
+        // Keep counts fresh via REST polling while the live stream is down
+        startPolling();
+
+        // Exponential backoff reconnection logic (cap at 30 seconds)
+        const delay = reconnectDelayRef.current;
+        reconnectDelayRef.current = Math.min(delay * 2, 30000);
+
         if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = setTimeout(() => {
           connectSSE();
         }, delay);
       }
     };
-  }, []);
+  }, [startPolling, stopPolling]);
 
   const disconnectSSE = useCallback(() => {
     if (eventSourceRef.current) {
@@ -122,11 +148,12 @@ export function useTicketAvailability() {
       eventSourceRef.current = null;
     }
     setIsConnected(false);
+    stopPolling();
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-  }, []);
+  }, [stopPolling]);
 
   // Handle visibility changes (Page Visibility API)
   useEffect(() => {
@@ -173,6 +200,7 @@ export function useTicketAvailability() {
     loading,
     error,
     isConnected,
+    isDegraded,
     refetch: fetchInitialAvailability,
   };
 }

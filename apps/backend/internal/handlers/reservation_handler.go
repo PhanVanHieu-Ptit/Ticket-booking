@@ -273,6 +273,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		"held_at":           heldAt.Format(time.RFC3339),
 		"expires_at":        expiresAt.Format(time.RFC3339),
 		"seconds_remaining": int64(ticketHoldTTL.Seconds()),
+		"server_time":       time.Now().Format(time.RFC3339),
 	}))
 }
 
@@ -323,7 +324,8 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 		return
 	}
 
-	secondsRemaining := int64(time.Until(expiresAt).Seconds())
+	now := time.Now()
+	secondsRemaining := int64(expiresAt.Sub(now).Seconds())
 	if secondsRemaining < 0 {
 		secondsRemaining = 0
 	}
@@ -337,5 +339,6 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 		"held_at":           heldAt.Format(time.RFC3339),
 		"expires_at":        expiresAt.Format(time.RFC3339),
 		"seconds_remaining": secondsRemaining,
+		"server_time":       now.Format(time.RFC3339),
 	}))
 }
