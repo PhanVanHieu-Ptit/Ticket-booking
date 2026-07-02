@@ -72,12 +72,12 @@ The system is a high-concurrency ticket booking application designed to handle a
   - Mock payment gateway integration.
   - Atomic database transaction to mark ticket as `Sold` and create an order record.
   - Integrated Redis-backed request idempotency middleware.
+- [x] **TS-10: Payment Checkout Frontend**
+  - Checkout form and payment simulation.
+  - Success/failure feedback screens.
 
 ### Pending Tasks
 
-- [ ] **TS-10: Payment Checkout Frontend**
-  - Checkout form and payment simulation.
-  - Success/failure feedback screens.
 - [ ] **TS-11: Admin Analytics**
   - Admin login page.
   - Dashboard displaying real-time sales velocity, total revenue, and active locks.

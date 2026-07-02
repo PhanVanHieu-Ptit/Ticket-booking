@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Clock, CreditCard, User, Mail, ShieldCheck, AlertTriangle } from "lucide-react";
 import { CheckoutLayout } from "./checkout.layout";
 import { bookingApi, ReservationDetails } from "../booking/booking.api";
+import { useCheckoutState } from "./checkout.state";
 
 interface ExpirationModalProps {
   onClose: () => void;
@@ -32,6 +33,18 @@ const ExpirationModal: React.FC<ExpirationModalProps> = ({ onClose }) => {
   );
 };
 
+// Simple, robust helper to generate a valid UUIDv4 string without external dependencies
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export const CheckoutPage: React.FC = () => {
   const navigate = useNavigate();
   const [holdDetails, setHoldDetails] = useState<ReservationDetails | null>(null);
@@ -40,7 +53,42 @@ export const CheckoutPage: React.FC = () => {
   const [expired, setExpired] = useState<boolean>(false);
   const [email, setEmail] = useState<string>("");
   const [cardName, setCardName] = useState<string>("");
+  const [cardNumber, setCardNumber] = useState<string>("");
+  const [cardExpiry, setCardExpiry] = useState<string>("");
+  const [cardCvv, setCardCvv] = useState<string>("");
+  const [simulateStatus, setSimulateStatus] = useState<"success" | "fail">("success");
+  
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<boolean>(false);
+
+  const { isProcessing, processCheckout } = useCheckoutState();
+
+  const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValidationError(null);
+    setCheckoutError(null);
+    const clean = e.target.value.replace(/\D/g, "");
+    const formatted = clean.match(/.{1,4}/g)?.join(" ") || clean;
+    setCardNumber(formatted.slice(0, 19));
+  };
+
+  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValidationError(null);
+    setCheckoutError(null);
+    const clean = e.target.value.replace(/\D/g, "");
+    if (clean.length <= 2) {
+      setCardExpiry(clean);
+    } else {
+      setCardExpiry(`${clean.slice(0, 2)}/${clean.slice(2, 4)}`);
+    }
+  };
+
+  const handleCvvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValidationError(null);
+    setCheckoutError(null);
+    const clean = e.target.value.replace(/\D/g, "");
+    setCardCvv(clean.slice(0, 4));
+  };
 
   const handleCancelReservation = async () => {
     setCancelling(true);
@@ -114,6 +162,67 @@ export const CheckoutPage: React.FC = () => {
     navigate("/");
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!holdDetails) return;
+
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setValidationError("Please enter a valid email address.");
+      return;
+    }
+
+    // Validate Cardholder Name
+    if (!cardName.trim()) {
+      setValidationError("Cardholder name is required.");
+      return;
+    }
+
+    // Validate Card Number (16 digits)
+    const cleanCard = cardNumber.replace(/\s/g, "");
+    if (!/^\d{16}$/.test(cleanCard)) {
+      setValidationError("Card number must be 16 digits.");
+      return;
+    }
+
+    // Validate Expiration (MM/YY)
+    if (!/^(0[1-9]|1[0-2])\/([0-9]{2})$/.test(cardExpiry)) {
+      setValidationError("Expiration date must be in MM/YY format.");
+      return;
+    }
+
+    // Validate CVV (3 or 4 digits)
+    if (!/^\d{3,4}$/.test(cardCvv)) {
+      setValidationError("CVV must be 3 or 4 digits.");
+      return;
+    }
+
+    setValidationError(null);
+    setCheckoutError(null);
+
+    const idempotencyKey = generateUUID();
+
+    try {
+      const payload = {
+        ticketId: holdDetails.ticket_id,
+        email,
+        cardHolderName: cardName,
+        paymentMethod: "simulated",
+        simulateStatus,
+      };
+
+      const result = await processCheckout(payload, idempotencyKey);
+      navigate("/confirmation", { state: { orderResult: result, holdDetails } });
+    } catch (err: any) {
+      if (err.status === 410 || err.code === "RESERVATION_EXPIRED") {
+        setExpired(true);
+      } else {
+        setCheckoutError(err.message || "Payment failed. Please check your card details and try again.");
+      }
+    }
+  };
+
   if (loading) {
     return (
       <CheckoutLayout>
@@ -142,7 +251,21 @@ export const CheckoutPage: React.FC = () => {
               </div>
             </div>
 
-            <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+            <form className="space-y-5" onSubmit={handleSubmit}>
+              {validationError && (
+                <div className="p-4 rounded-xl border border-red-500/20 bg-red-950/20 text-red-400 text-sm flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{validationError}</span>
+                </div>
+              )}
+
+              {checkoutError && (
+                <div className="p-4 rounded-xl border border-red-500/20 bg-red-950/20 text-red-400 text-sm flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{checkoutError}</span>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <label className="block text-sm font-semibold text-neutral-300">Email Address</label>
                 <div className="relative">
@@ -150,8 +273,8 @@ export const CheckoutPage: React.FC = () => {
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={expired}
+                    onChange={(e) => { setEmail(e.target.value); setValidationError(null); setCheckoutError(null); }}
+                    disabled={expired || isProcessing}
                     className="w-full bg-neutral-950/60 border border-white/5 rounded-xl pl-11 pr-4 py-3 text-neutral-200 focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:bg-neutral-900/40"
                     placeholder="you@example.com"
                     required
@@ -166,8 +289,8 @@ export const CheckoutPage: React.FC = () => {
                   <input
                     type="text"
                     value={cardName}
-                    onChange={(e) => setCardName(e.target.value)}
-                    disabled={expired}
+                    onChange={(e) => { setCardName(e.target.value); setValidationError(null); setCheckoutError(null); }}
+                    disabled={expired || isProcessing}
                     className="w-full bg-neutral-950/60 border border-white/5 rounded-xl pl-11 pr-4 py-3 text-neutral-200 focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:bg-neutral-900/40"
                     placeholder="John Doe"
                     required
@@ -175,19 +298,84 @@ export const CheckoutPage: React.FC = () => {
                 </div>
               </div>
 
-              <button 
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-neutral-300">Card Number</label>
+                <div className="relative">
+                  <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+                  <input
+                    type="text"
+                    value={cardNumber}
+                    onChange={handleCardNumberChange}
+                    disabled={expired || isProcessing}
+                    className="w-full bg-neutral-950/60 border border-white/5 rounded-xl pl-11 pr-4 py-3 text-neutral-200 focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:bg-neutral-900/40"
+                    placeholder="4111 1111 1111 1111"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-neutral-300">Expiration Date</label>
+                  <input
+                    type="text"
+                    value={cardExpiry}
+                    onChange={handleExpiryChange}
+                    disabled={expired || isProcessing}
+                    className="w-full bg-neutral-950/60 border border-white/5 rounded-xl px-4 py-3 text-neutral-200 focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:bg-neutral-900/40"
+                    placeholder="MM/YY"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-neutral-300">CVV</label>
+                  <input
+                    type="password"
+                    value={cardCvv}
+                    onChange={handleCvvChange}
+                    disabled={expired || isProcessing}
+                    className="w-full bg-neutral-950/60 border border-white/5 rounded-xl px-4 py-3 text-neutral-200 focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:bg-neutral-900/40"
+                    placeholder="123"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-neutral-300">Simulation Status (Testing)</label>
+                <select
+                  value={simulateStatus}
+                  onChange={(e) => setSimulateStatus(e.target.value as "success" | "fail")}
+                  disabled={expired || isProcessing}
+                  className="w-full bg-neutral-950/60 border border-white/5 rounded-xl px-4 py-3 text-neutral-200 focus:outline-none focus:border-primary transition disabled:opacity-50 disabled:bg-neutral-900/40"
+                >
+                  <option value="success">Simulate Success</option>
+                  <option value="fail">Simulate Failure (402 Payment Required)</option>
+                </select>
+              </div>
+
+              <button
                 type="submit"
-                disabled={expired || cancelling}
+                disabled={expired || cancelling || isProcessing}
                 className="w-full py-4 bg-primary hover:bg-primary/95 text-white font-bold rounded-xl transition-all shadow-lg shadow-primary/20 hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                <CreditCard className="w-5 h-5" />
-                Pay Now
+                {isProcessing ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Processing Payment...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-5 h-5" />
+                    Pay Now
+                  </>
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={handleCancelReservation}
-                disabled={expired || cancelling}
+                disabled={expired || cancelling || isProcessing}
                 className="w-full py-3 bg-neutral-900 hover:bg-neutral-800/80 text-neutral-300 font-semibold rounded-xl border border-white/5 transition-all hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 {cancelling ? (
@@ -209,14 +397,14 @@ export const CheckoutPage: React.FC = () => {
               <span>1x {ticketCategoryLabel}</span>
               <span className="font-semibold text-neutral-200">${price.toFixed(2)}</span>
             </div>
-            
+
             {holdDetails?.ticket_code && (
               <div className="text-xs text-neutral-500 flex justify-between">
                 <span>Ticket Code</span>
                 <span className="font-mono text-neutral-400">{holdDetails.ticket_code}</span>
               </div>
             )}
-            
+
             <div className="border-t border-white/5 pt-4 flex justify-between font-bold text-lg">
               <span>Total</span>
               <span className="text-primary">${price.toFixed(2)}</span>

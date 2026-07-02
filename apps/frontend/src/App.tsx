@@ -2,6 +2,7 @@ import { Ticket, BarChart3, Flame } from 'lucide-react';
 import { createBrowserRouter, RouterProvider, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { BookingPage } from './modules/booking/booking.page';
 import { CheckoutPage } from './modules/checkout/checkout.page';
+import { ConfirmationPage } from './modules/checkout/confirmation.page';
 import { AdminPage } from './modules/admin/admin.page';
 
 function Layout() {
@@ -91,6 +92,10 @@ const router = createBrowserRouter([
       {
         path: 'checkout',
         element: <CheckoutPage />,
+      },
+      {
+        path: 'confirmation',
+        element: <ConfirmationPage />,
       },
       {
         path: 'admin',
