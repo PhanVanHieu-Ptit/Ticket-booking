@@ -1,66 +1,32 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
+	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
+	appredis "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	appErrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
-const reserveLua = `
-local session_id = KEYS[1]
-local category = ARGV[1]
-local ttl = tonumber(ARGV[2])
-
-local purchased_set = "purchased:sessions"
-local hold_key = "hold:" .. session_id
-local available_set = "tickets:available:" .. category
-
--- 1. Verify session does not already exist in purchased:sessions
-if redis.call("SISMEMBER", purchased_set, session_id) == 1 then
-    return { "ERR", "PURCHASE_LIMIT_EXCEEDED" }
-end
-
--- 2. Verify session does not already have an active hold
-if redis.call("EXISTS", hold_key) == 1 then
-    return { "ERR", "ACTIVE_HOLD_EXISTS" }
-end
-
--- 3. Verify there is at least one ticket ID in the set
-local count = redis.call("SCARD", available_set)
-if count == 0 then
-    return { "ERR", "TICKET_UNAVAILABLE" }
-end
-
--- 5. Pop ticket ID and set hold key
-local ticket_id = redis.call("SPOP", available_set)
-if not ticket_id then
-    return { "ERR", "TICKET_UNAVAILABLE" }
-end
-
-redis.call("SET", hold_key, ticket_id .. ":" .. category, "EX", ttl)
-return { "OK", ticket_id }
-`
+const ticketHoldTTL = 5 * time.Minute
 
 type ReservationHandler struct {
 	db        *sql.DB
-	rdb       *redis.Client
+	redisSvc  *appredis.RedisService
 	jwtSecret []byte
 }
 
 // NewReservationHandler creates a new instance of ReservationHandler.
-func NewReservationHandler(db *sql.DB, rdb *redis.Client, jwtSecret []byte) *ReservationHandler {
+func NewReservationHandler(db *sql.DB, redisSvc *appredis.RedisService, jwtSecret []byte) *ReservationHandler {
 	return &ReservationHandler{
 		db:        db,
-		rdb:       rdb,
+		redisSvc:  redisSvc,
 		jwtSecret: jwtSecret,
 	}
 }
@@ -105,41 +71,23 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	}
 	sessionID := sessionIDVal.(string)
 
-	// 3. Execute Redis Lua Script
-	res, err := h.rdb.Eval(ctx, reserveLua, []string{sessionID}, req.Category, 300).Slice()
+	// 3. Acquire an atomic Redis-backed hold BEFORE touching the database.
+	// RedisService.HoldTicket runs a single Lua script that checks the
+	// purchase limit, checks for an existing hold, and pops one ticket ID
+	// from the category's available set, all atomically. If Redis reports
+	// the session is ineligible or the category is sold out, we fail
+	// immediately without any DB write.
+	ticketID, err := h.redisSvc.HoldTicket(ctx, sessionID, req.Category, ticketHoldTTL)
 	if err != nil {
-		logger.Error("Redis reservation script failed to execute", "error", err, "session_id", sessionID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Internal server error",
-			nil,
-		))
-		return
-	}
-
-	if len(res) < 2 {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Invalid response from reservation shield",
-			nil,
-		))
-		return
-	}
-
-	status, _ := res[0].(string)
-	payload, _ := res[1].(string)
-
-	if status == "ERR" {
-		switch payload {
-		case "PURCHASE_LIMIT_EXCEEDED":
+		switch {
+		case errors.Is(err, appredis.ErrPurchaseLimitExceeded):
 			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
 				appErrors.ErrCodePurchaseLimitExceed,
 				"You have already purchased a ticket. Limit is 1 ticket per customer.",
 				nil,
 			))
-		case "ACTIVE_HOLD_EXISTS":
-			// Fetch current TTL from Redis
-			ttlVal, _ := h.rdb.TTL(ctx, "hold:"+sessionID).Result()
+		case errors.Is(err, appredis.ErrActiveHoldExists):
+			ttlVal, _ := h.redisSvc.GetHoldTTL(ctx, sessionID)
 			expiresAt := time.Now().Add(ttlVal)
 			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
 				appErrors.ErrCodeActiveHoldExists,
@@ -149,46 +97,31 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 					"seconds_remaining": int64(ttlVal.Seconds()),
 				},
 			))
-		case "INVALID_CATEGORY":
-			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-				appErrors.ErrCodeInvalidCategory,
-				"The requested ticket category is invalid.",
-				nil,
-			))
-		case "TICKET_UNAVAILABLE":
+		case errors.Is(err, appredis.ErrTicketUnavailable):
 			c.JSON(http.StatusConflict, types.NewErrorResponse(
 				appErrors.ErrCodeTicketUnavailable,
 				"Sorry, all tickets in this category are currently reserved or sold. Please check back soon.",
 				nil,
 			))
 		default:
+			logger.Error("Redis reservation hold failed to execute", "error", err, "session_id", sessionID)
 			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
 				appErrors.ErrCodeInternal,
-				"Internal reservation failure: "+payload,
+				"Internal server error",
 				nil,
 			))
 		}
 		return
 	}
 
-	ticketID, err := strconv.ParseInt(payload, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Failed to parse ticket ID",
-			nil,
-		))
-		return
-	}
-
-	// 4. Synchronize hold to PostgreSQL
+	// 4. Synchronize hold to PostgreSQL — second layer of protection.
 	heldAt := time.Now()
-	expiresAt := heldAt.Add(5 * time.Minute)
+	expiresAt := heldAt.Add(ticketHoldTTL)
 
 	tx, err := h.db.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("Failed to start database transaction for ticket hold", "error", err)
-		h.rollbackRedis(ctx, sessionID, req.Category, ticketID)
+		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
 			appErrors.ErrCodeReservationFailed,
 			"Failed to start reservation transaction",
@@ -200,14 +133,14 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 
 	// Clean up any expired holds for this session to prevent unique constraint violation
 	_, err = tx.ExecContext(ctx, `
-		UPDATE tickets 
-		SET status = 'Available', session_id = NULL, held_at = NULL, expires_at = NULL, updated_at = NOW() 
+		UPDATE tickets
+		SET status = 'Available', session_id = NULL, held_at = NULL, expires_at = NULL, updated_at = NOW()
 		WHERE session_id = $1 AND status = 'Holding' AND expires_at <= NOW()
 	`, sessionID)
 	if err != nil {
 		logger.Error("Failed to clean up expired holds for session during reservation", "error", err, "session_id", sessionID)
 		tx.Rollback()
-		h.rollbackRedis(ctx, sessionID, req.Category, ticketID)
+		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
 			appErrors.ErrCodeReservationFailed,
 			"Reservation failed during database cleanup",
@@ -216,52 +149,74 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		return
 	}
 
-	// Update ticket status to 'Holding' where status is 'Available'
-	result, err := tx.ExecContext(ctx, `
-		UPDATE tickets 
-		SET status = 'Holding', session_id = $2, held_at = $3, expires_at = $4, updated_at = NOW() 
-		WHERE id = $1 AND status = 'Available'
-	`, ticketID, sessionID, heldAt, expiresAt)
-
+	// Lock the ticket row (SELECT ... FOR UPDATE) before deciding whether to
+	// write it. This holds a row lock for the rest of the transaction, so no
+	// other transaction can concurrently read/modify this specific ticket
+	// until we commit or roll back.
+	var currentStatus string
+	var currentExpiresAt sql.NullTime
+	err = tx.QueryRowContext(ctx, `
+		SELECT status, expires_at
+		FROM tickets
+		WHERE id = $1
+		FOR UPDATE
+	`, ticketID).Scan(&currentStatus, &currentExpiresAt)
 	if err != nil {
-		// Query database for existing hold / purchase details to return precise user-facing error response
-		var existingStatus string
-		var existingExpiresAt sql.NullTime
-		errFind := tx.QueryRowContext(ctx, "SELECT status, expires_at FROM tickets WHERE session_id = $1", sessionID).Scan(&existingStatus, &existingExpiresAt)
-		if errFind == nil {
-			tx.Rollback()
-			h.rollbackRedis(ctx, sessionID, req.Category, ticketID)
+		logger.Error("Failed to lock ticket row for hold", "error", err, "ticket_id", ticketID)
+		tx.Rollback()
+		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+			appErrors.ErrCodeReservationFailed,
+			"Reservation failed while locking ticket row",
+			nil,
+		))
+		return
+	}
 
-			if existingStatus == "Sold" {
-				c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-					appErrors.ErrCodePurchaseLimitExceed,
-					"You have already purchased a ticket. Limit is 1 ticket per customer.",
-					nil,
-				))
-				return
-			} else if existingStatus == "Holding" {
-				var secRem int64
-				if existingExpiresAt.Valid {
-					secRem = int64(time.Until(existingExpiresAt.Time).Seconds())
-					if secRem < 0 {
-						secRem = 0
-					}
-				}
-				c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-					appErrors.ErrCodeActiveHoldExists,
-					"You already have an active reservation. Please complete your purchase or wait for it to expire.",
-					gin.H{
-						"expires_at":        existingExpiresAt.Time.Format(time.RFC3339),
-						"seconds_remaining": secRem,
-					},
-				))
-				return
-			}
+	if currentStatus != "Available" {
+		tx.Rollback()
+		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
+
+		if currentStatus == "Sold" {
+			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
+				appErrors.ErrCodePurchaseLimitExceed,
+				"You have already purchased a ticket. Limit is 1 ticket per customer.",
+				nil,
+			))
+			return
 		}
 
+		// currentStatus == "Holding"
+		var secRem int64
+		if currentExpiresAt.Valid {
+			secRem = int64(time.Until(currentExpiresAt.Time).Seconds())
+			if secRem < 0 {
+				secRem = 0
+			}
+		}
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(
+			appErrors.ErrCodeActiveHoldExists,
+			"You already have an active reservation. Please complete your purchase or wait for it to expire.",
+			gin.H{
+				"expires_at":        currentExpiresAt.Time.Format(time.RFC3339),
+				"seconds_remaining": secRem,
+			},
+		))
+		return
+	}
+
+	// Update ticket status to 'Holding'. The row is already locked and
+	// confirmed 'Available' above; the WHERE clause is kept as a defensive,
+	// belt-and-suspenders guard against unexpected state changes.
+	result, err := tx.ExecContext(ctx, `
+		UPDATE tickets
+		SET status = 'Holding', session_id = $2, held_at = $3, expires_at = $4, updated_at = NOW()
+		WHERE id = $1 AND status = 'Available'
+	`, ticketID, sessionID, heldAt, expiresAt)
+	if err != nil {
 		logger.Error("Database update failed for ticket hold", "error", err, "ticket_id", ticketID)
 		tx.Rollback()
-		h.rollbackRedis(ctx, sessionID, req.Category, ticketID)
+		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
 			appErrors.ErrCodeReservationFailed,
 			"Reservation failed during database update",
@@ -274,7 +229,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	if err != nil || rowsAffected == 0 {
 		logger.Error("No rows affected on database update for ticket hold", "ticket_id", ticketID)
 		tx.Rollback()
-		h.rollbackRedis(ctx, sessionID, req.Category, ticketID)
+		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
 			appErrors.ErrCodeReservationFailed,
 			"Reservation failed; ticket already reserved or unavailable",
@@ -286,7 +241,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	// Commit PostgreSQL transaction
 	if err := tx.Commit(); err != nil {
 		logger.Error("Database commit failed for ticket hold", "error", err)
-		h.rollbackRedis(ctx, sessionID, req.Category, ticketID)
+		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
 		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
 			appErrors.ErrCodeReservationFailed,
 			"Reservation failed during database commit",
@@ -304,7 +259,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	}
 
 	// 6. Broadcast updated count to SSE broker
-	newCount, err := h.rdb.SCard(ctx, "tickets:available:"+req.Category).Result()
+	newCount, err := h.redisSvc.AvailableCount(ctx, req.Category)
 	if err == nil {
 		sse.BroadcastInventoryUpdate(req.Category, newCount)
 	}
@@ -317,7 +272,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		"status":            "Holding",
 		"held_at":           heldAt.Format(time.RFC3339),
 		"expires_at":        expiresAt.Format(time.RFC3339),
-		"seconds_remaining": 300,
+		"seconds_remaining": int64(ticketHoldTTL.Seconds()),
 	}))
 }
 
@@ -383,14 +338,4 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 		"expires_at":        expiresAt.Format(time.RFC3339),
 		"seconds_remaining": secondsRemaining,
 	}))
-}
-
-func (h *ReservationHandler) rollbackRedis(ctx context.Context, sessionID string, category string, ticketID int64) {
-	pipe := h.rdb.Pipeline()
-	pipe.Del(ctx, "hold:"+sessionID)
-	pipe.SAdd(ctx, "tickets:available:"+category, ticketID)
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		logger.Error("Failed to execute Redis rollback pipeline", "error", err, "session_id", sessionID, "ticket_id", ticketID)
-	}
 }

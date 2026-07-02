@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -232,5 +234,101 @@ func TestPaymentCheckoutFlow(t *testing.T) {
 	existsKey := rdb.Exists(ctx, "idempotency:"+testSessionID2+":"+idempotencyKeyFail).Val()
 	if existsKey != 0 {
 		t.Errorf("expected Redis idempotency key to be deleted on failure, but it exists")
+	}
+}
+
+// TestPreventDuplicatePaidOrders verifies the DB-level safety net (migration
+// 000002, idx_orders_ticket_id_paid): even a caller that bypasses the
+// application-level ticket-status lock in Checkout cannot persist two 'Paid'
+// orders for the same ticket. Checkout itself can't be driven into this race
+// directly (it already refuses a second attempt once the ticket is no longer
+// 'Holding'), so this exercises the repository call the constraint guards.
+func TestPreventDuplicatePaidOrders(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:postgres@localhost:5432/ticket_booking?sslmode=disable"
+	}
+	dbConn, err := appDB.Init(dbURL)
+	if err != nil {
+		t.Skipf("PostgreSQL connection failed, skipping integration tests: %v", err)
+		return
+	}
+	defer appDB.Close()
+
+	// Uses a ticket_code prefix distinct from TKT-PMT-% and TKT-TEST-% (used by
+	// other tests' cleanup queries) so this test's leftover order — which
+	// references its ticket via FK — can never block an unrelated test's
+	// same-transaction DELETE (Postgres DELETE is all-or-nothing).
+	const testTicketCode = "TKT-DUPCHK-001"
+
+	ctx := context.Background()
+	_, _ = dbConn.ExecContext(ctx, "DELETE FROM orders WHERE ticket_id IN (SELECT id FROM tickets WHERE ticket_code = $1)", testTicketCode)
+	_, _ = dbConn.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_code = $1", testTicketCode)
+	defer func() {
+		_, _ = dbConn.ExecContext(ctx, "DELETE FROM orders WHERE ticket_id IN (SELECT id FROM tickets WHERE ticket_code = $1)", testTicketCode)
+		_, _ = dbConn.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_code = $1", testTicketCode)
+	}()
+
+	var ticketID int64
+	err = dbConn.QueryRowContext(ctx, `
+		INSERT INTO tickets (ticket_code, category, price, status, session_id, held_at, expires_at)
+		VALUES ($1, 'VIP', 150.0, 'Sold', 'sess_dup_test_1', NOW(), NOW() + INTERVAL '5 minutes')
+		RETURNING id
+	`, testTicketCode).Scan(&ticketID)
+	if err != nil {
+		t.Fatalf("failed to insert test ticket: %v", err)
+	}
+
+	repo := NewPaymentRepository(dbConn)
+
+	createPaidOrder := func(sessionID, paymentRef string) error {
+		tx, txErr := dbConn.BeginTx(ctx, nil)
+		if txErr != nil {
+			t.Fatalf("failed to begin transaction: %v", txErr)
+		}
+		defer tx.Rollback()
+
+		order := &Order{
+			TicketID:         ticketID,
+			SessionID:        sessionID,
+			Amount:           150.0,
+			Status:           StatusPaid,
+			Email:            "dup-test@example.com",
+			CardHolderName:   "Dup Test",
+			PaymentReference: paymentRef,
+		}
+		if createErr := repo.CreateOrder(ctx, tx, order); createErr != nil {
+			return createErr
+		}
+		return tx.Commit()
+	}
+
+	if err := createPaidOrder("sess_dup_test_1", "PAY-DUP-TEST-1"); err != nil {
+		t.Fatalf("expected first paid order to succeed, got error: %v", err)
+	}
+
+	err = createPaidOrder("sess_dup_test_2", "PAY-DUP-TEST-2")
+	if err == nil {
+		t.Fatalf("expected second paid order for the same ticket to be rejected by the DB, but it succeeded")
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		t.Fatalf("expected a pgconn.PgError, got: %v", err)
+	}
+	// idx_orders_ticket_id_paid (added by migration 000002) is the constraint
+	// this test targets. Some environments may also carry a pre-existing,
+	// stricter orders_ticket_id_key unique constraint that intercepts first —
+	// either way the DB must reject the duplicate paid order.
+	if pgErr.Code != "23505" || (pgErr.ConstraintName != "idx_orders_ticket_id_paid" && pgErr.ConstraintName != "orders_ticket_id_key") {
+		t.Fatalf("expected unique_violation on idx_orders_ticket_id_paid, got code=%q constraint=%q", pgErr.Code, pgErr.ConstraintName)
+	}
+
+	var paidOrderCount int
+	if err := dbConn.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE ticket_id = $1 AND status = 'Paid'", ticketID).Scan(&paidOrderCount); err != nil {
+		t.Fatalf("failed to count paid orders: %v", err)
+	}
+	if paidOrderCount != 1 {
+		t.Errorf("expected exactly 1 paid order to persist, got %d", paidOrderCount)
 	}
 }
