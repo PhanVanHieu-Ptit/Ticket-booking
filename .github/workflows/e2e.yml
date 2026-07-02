@@ -1,0 +1,116 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: test
+      PORT: 8080
+      GIN_MODE: release
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ticket_booking?sslmode=disable
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/ticket_booking?sslmode=disable
+      REDIS_URL: redis://localhost:6379/0
+      ADMIN_TOKEN: ci-admin-token
+      JWT_SECRET: ci-jwt-secret
+      BASE_URL: http://localhost:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/backend/go.mod
+
+      # Postgres (direct, port 5433) + PgBouncer (pooled, port 5432) + Redis,
+      # exactly like local dev (see docker-compose.yml / DEVELOPMENT.md).
+      - name: Start infrastructure (Postgres, PgBouncer, Redis)
+        run: docker compose up -d
+
+      - name: Wait for Postgres to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec ticket-booking-postgres pg_isready -U postgres -d ticket_booking; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Postgres did not become healthy in time" >&2
+          exit 1
+
+      - name: Run database migrations
+        run: |
+          for f in apps/backend/db/migrations/*.up.sql; do
+            echo "Applying $f"
+            docker exec -i ticket-booking-postgres psql -U postgres -d ticket_booking < "$f"
+          done
+
+      - name: Seed database
+        run: docker exec -i ticket-booking-postgres psql -U postgres -d ticket_booking < apps/backend/db/seeds/seed_tickets.sql
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build and start backend API server
+        working-directory: apps/backend
+        run: |
+          go build -o bin/api ./cmd/api
+          ./bin/api > /tmp/backend.log 2>&1 &
+          echo $! > /tmp/backend.pid
+
+      - name: Wait for backend to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/api/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Backend did not become healthy in time" >&2
+          cat /tmp/backend.log
+          exit 1
+
+      # playwright.config.ts's webServer starts the frontend itself
+      # (reuseExistingServer is disabled in CI), runs headless by default.
+      - name: Run E2E tests
+        run: npm run test:e2e:ci
+
+      - name: Stop backend
+        if: always()
+        run: kill "$(cat /tmp/backend.pid)" || true
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload backend logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-logs
+          path: /tmp/backend.log
+          retention-days: 14
+
+      - name: Tear down infrastructure
+        if: always()
+        run: docker compose down

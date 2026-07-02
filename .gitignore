@@ -58,6 +58,12 @@ coverage/
 .nyc_output/
 junit.xml
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # Local config/cache
 .eslintcache
 .parcel-cache
