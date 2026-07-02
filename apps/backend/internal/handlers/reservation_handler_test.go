@@ -13,6 +13,7 @@ import (
 
 	"strconv"
 
+	appredis "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
 	appDB "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/db"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/gin-gonic/gin"
@@ -90,7 +91,8 @@ func TestReservationFlow(t *testing.T) {
 	// We deliberately DO NOT populate Standard category in Redis to simulate "sold out/unavailable" behavior
 
 	jwtSecret := []byte("test-jwt-secret-key-2026")
-	handler := NewReservationHandler(dbConn, rdb, jwtSecret)
+	redisSvc := appredis.NewRedisService(rdb)
+	handler := NewReservationHandler(dbConn, redisSvc, jwtSecret)
 
 	r := gin.New()
 	// Mock middleware to inject session_id

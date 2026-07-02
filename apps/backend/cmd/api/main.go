@@ -91,11 +91,14 @@ func main() {
 		c.Next()
 	})
 
+	// Initialize the Redis-backed ticket inventory service
+	redisSvc := redis.NewRedisService(rdb)
+
 	// Initialize handlers
 	sessionHandler := handlers.NewSessionHandler()
 	adminHandler := handlers.NewAdminHandler(database, []byte(cfg.JWTSecret))
 	availabilityHandler := handlers.NewAvailabilityHandler(database, rdb, sse.GlobalBroker, []byte(cfg.JWTSecret))
-	reservationHandler := handlers.NewReservationHandler(database, rdb, []byte(cfg.JWTSecret))
+	reservationHandler := handlers.NewReservationHandler(database, redisSvc, []byte(cfg.JWTSecret))
 	paymentModule := payment.NewModule(database, rdb)
 
 	// Base API route group

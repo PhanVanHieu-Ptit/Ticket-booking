@@ -96,16 +96,12 @@ func (h *ReservationHandler) CancelHold(c *gin.Context) {
 	}
 
 	// 6. Redis updates - Delete hold key and add ticket back to available set
-	pipe := h.rdb.Pipeline()
-	pipe.Del(ctx, "hold:"+sessionID)
-	pipe.SAdd(ctx, "tickets:available:"+category, ticketID)
-	_, err = pipe.Exec(ctx)
-	if err != nil {
-		logger.Error("Failed to execute Redis cancellation pipeline", "error", err, "session_id", sessionID, "ticket_id", ticketID)
+	if err := h.redisSvc.ReleaseHold(ctx, sessionID, category, ticketID); err != nil {
+		logger.Error("Failed to execute Redis cancellation release", "error", err, "session_id", sessionID, "ticket_id", ticketID)
 	}
 
 	// 7. Get new Redis count and broadcast to SSE broker
-	newCount, err := h.rdb.SCard(ctx, "tickets:available:"+category).Result()
+	newCount, err := h.redisSvc.AvailableCount(ctx, category)
 	if err == nil {
 		sse.BroadcastInventoryUpdate(category, newCount)
 	} else {

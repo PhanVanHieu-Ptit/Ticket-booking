@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"time"
 
@@ -10,8 +11,14 @@ import (
 	appErrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
 )
+
+// duplicatePaidOrderConstraint is the DB-level safety net (see migration
+// 000002) that rejects a second 'Paid' order for the same ticket even if
+// application-level locking is ever bypassed.
+const duplicatePaidOrderConstraint = "idx_orders_ticket_id_paid"
 
 type paymentService struct {
 	repo Repository
@@ -83,6 +90,10 @@ func (s *paymentService) Checkout(ctx context.Context, sessionID string, ticketI
 
 	err = s.repo.CreateOrder(ctx, tx, order)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == duplicatePaidOrderConstraint {
+			return nil, appErrors.New(http.StatusConflict, appErrors.ErrCodeConflict, "This ticket has already been purchased")
+		}
 		return nil, appErrors.NewInternal(err, "Failed to record order")
 	}
 
