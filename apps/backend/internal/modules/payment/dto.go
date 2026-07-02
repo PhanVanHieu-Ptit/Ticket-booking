@@ -4,11 +4,11 @@ import "time"
 
 // CheckoutRequest represents the request payload to complete a purchase.
 type CheckoutRequest struct {
-	TicketID       int64  `json:"ticket_id" binding:"required"`
+	TicketID       int64  `json:"ticket_id" binding:"required,gt=0"`
 	Email          string `json:"email" binding:"required,email"`
 	CardHolderName string `json:"card_holder_name" binding:"required"`
 	PaymentMethod  string `json:"payment_method" binding:"required"`
-	SimulateStatus string `json:"simulate_status" binding:"required"` // "success" or "fail"
+	SimulateStatus string `json:"simulate_status" binding:"required,oneof=success fail"`
 }
 
 // CheckoutResponse represents the response after a successful checkout.
