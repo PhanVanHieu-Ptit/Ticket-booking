@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/session"
+	apperrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -36,13 +37,8 @@ func SessionMiddleware(jwtSecret string, isProd bool) gin.HandlerFunc {
 			tokenStr, exp, err := session.SignSessionToken(sessionID, []byte(jwtSecret))
 			if err != nil {
 				logger.Error("Failed to generate signed session token", "error", err)
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-					"success": false,
-					"error": gin.H{
-						"code":    "INTERNAL_ERROR",
-						"message": "An unexpected error occurred during session initialization",
-					},
-				})
+				c.Error(apperrors.NewInternal(err, "An unexpected error occurred during session initialization"))
+				c.Abort()
 				return
 			}
 			expiresAt = exp

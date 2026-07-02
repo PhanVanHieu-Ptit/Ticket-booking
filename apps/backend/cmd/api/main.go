@@ -73,8 +73,13 @@ func main() {
 	r := gin.New()
 
 	// Use custom recovery and logging middleware
-	r.Use(logger.RecoveryMiddleware())
+	r.Use(logger.RecoveryMiddleware(cfg.IsProduction()))
 	r.Use(logger.GinMiddleware())
+
+	// Global exception filter: every handler/middleware reports errors via
+	// c.Error(err) instead of writing its own JSON; this is the only place
+	// that serializes an error response for non-panic failures.
+	r.Use(middleware.ErrorHandlerMiddleware(cfg.IsProduction()))
 
 	// Custom CORS middleware
 	r.Use(func(c *gin.Context) {

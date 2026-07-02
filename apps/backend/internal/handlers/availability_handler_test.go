@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/middleware"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/session"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,7 @@ func TestGetAvailability(t *testing.T) {
 	handler := NewAvailabilityHandler(nil, rdb, broker, []byte("test-secret"))
 
 	r := gin.New()
+	r.Use(middleware.ErrorHandlerMiddleware(false))
 	r.GET("/api/v1/tickets/availability", handler.GetAvailability)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tickets/availability", nil)
@@ -99,6 +101,7 @@ func TestStreamAvailability_Unauthorized(t *testing.T) {
 	handler := NewAvailabilityHandler(nil, nil, nil, []byte("test-secret"))
 
 	r := gin.New()
+	r.Use(middleware.ErrorHandlerMiddleware(false))
 	r.GET("/api/v1/tickets/availability/stream", handler.StreamAvailability)
 
 	// Try without token

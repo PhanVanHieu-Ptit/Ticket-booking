@@ -34,11 +34,7 @@ type loginRequest struct {
 func (h *AdminHandler) Login(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-			errors.ErrCodeInvalidInput,
-			"Passcode is required",
-			nil,
-		))
+		c.Error(errors.New(http.StatusBadRequest, errors.ErrCodeInvalidInput, "Passcode is required"))
 		return
 	}
 
@@ -48,30 +44,18 @@ func (h *AdminHandler) Login(c *gin.Context) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			logger.Error("Admin passcode configuration not found in database")
-			c.JSON(http.StatusUnauthorized, types.NewErrorResponse(
-				errors.ErrCodeAdminUnauthorized,
-				"Invalid admin passcode.",
-				nil,
-			))
+			c.Error(errors.New(http.StatusUnauthorized, errors.ErrCodeAdminUnauthorized, "Invalid admin passcode."))
 			return
 		}
 		logger.Error("Database query failed while fetching admin passcode", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			errors.ErrCodeInternal,
-			"An unexpected database error occurred",
-			nil,
-		))
+		c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 		return
 	}
 
 	// Compare passcodes
 	err = bcrypt.CompareHashAndPassword([]byte(hashedPasscode), []byte(req.Passcode))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(
-			errors.ErrCodeAdminUnauthorized,
-			"Invalid admin passcode.",
-			nil,
-		))
+		c.Error(errors.New(http.StatusUnauthorized, errors.ErrCodeAdminUnauthorized, "Invalid admin passcode."))
 		return
 	}
 
@@ -79,11 +63,7 @@ func (h *AdminHandler) Login(c *gin.Context) {
 	tokenStr, expiresAt, err := session.SignAdminToken(h.jwtSecret)
 	if err != nil {
 		logger.Error("Failed to sign admin JWT token", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			errors.ErrCodeInternal,
-			"An unexpected error occurred during login",
-			nil,
-		))
+		c.Error(errors.NewInternal(err, "An unexpected error occurred during login"))
 		return
 	}
 
@@ -124,11 +104,7 @@ func (h *AdminHandler) GetMetrics(c *gin.Context) {
 	err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tickets WHERE status = 'Sold'").Scan(&totalTicketsSold)
 	if err != nil {
 		logger.Error("Failed to fetch total tickets sold", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			errors.ErrCodeInternal,
-			"An unexpected database error occurred",
-			nil,
-		))
+		c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 		return
 	}
 
@@ -136,22 +112,14 @@ func (h *AdminHandler) GetMetrics(c *gin.Context) {
 	err = h.db.QueryRowContext(ctx, "SELECT COALESCE(SUM(price), 0) FROM tickets WHERE status = 'Sold'").Scan(&totalRevenue)
 	if err != nil {
 		logger.Error("Failed to fetch total revenue", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			errors.ErrCodeInternal,
-			"An unexpected database error occurred",
-			nil,
-		))
+		c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 		return
 	}
 
 	rows, err := h.db.QueryContext(ctx, "SELECT category, status, COUNT(*) FROM tickets GROUP BY category, status")
 	if err != nil {
 		logger.Error("Failed to fetch inventory breakdown", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			errors.ErrCodeInternal,
-			"An unexpected database error occurred",
-			nil,
-		))
+		c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 		return
 	}
 	defer rows.Close()
@@ -166,11 +134,7 @@ func (h *AdminHandler) GetMetrics(c *gin.Context) {
 		var count int
 		if err := rows.Scan(&category, &status, &count); err != nil {
 			logger.Error("Failed to scan inventory breakdown row", "error", err)
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-				errors.ErrCodeInternal,
-				"An unexpected database error occurred",
-				nil,
-			))
+			c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 			return
 		}
 		switch category {
@@ -223,11 +187,7 @@ func (h *AdminHandler) GetHolds(c *gin.Context) {
 	`)
 	if err != nil {
 		logger.Error("Failed to query active holds", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			errors.ErrCodeInternal,
-			"An unexpected database error occurred",
-			nil,
-		))
+		c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 		return
 	}
 	defer rows.Close()
@@ -246,11 +206,7 @@ func (h *AdminHandler) GetHolds(c *gin.Context) {
 		)
 		if err != nil {
 			logger.Error("Failed to scan hold row", "error", err)
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-				errors.ErrCodeInternal,
-				"An unexpected database error occurred",
-				nil,
-			))
+			c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 			return
 		}
 

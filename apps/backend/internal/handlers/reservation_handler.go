@@ -41,32 +41,20 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 
 	var req reserveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-			appErrors.ErrCodeInvalidInput,
-			"Category is required",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodeInvalidInput, "Category is required"))
 		return
 	}
 
 	// 1. Validate requested category is VIP or Standard
 	if req.Category != "VIP" && req.Category != "Standard" {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-			appErrors.ErrCodeInvalidCategory,
-			"The requested ticket category is invalid.",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodeInvalidCategory, "The requested ticket category is invalid."))
 		return
 	}
 
 	// 2. Fetch session ID from request context (set by SessionMiddleware)
 	sessionIDVal, exists := c.Get("session_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(
-			appErrors.ErrCodeSessionRequired,
-			"Session token is required",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusUnauthorized, appErrors.ErrCodeSessionRequired, "Session token is required"))
 		return
 	}
 	sessionID := sessionIDVal.(string)
@@ -81,35 +69,23 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, appredis.ErrPurchaseLimitExceeded):
-			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-				appErrors.ErrCodePurchaseLimitExceed,
-				"You have already purchased a ticket. Limit is 1 ticket per customer.",
-				nil,
-			))
+			c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodePurchaseLimitExceed,
+				"You have already purchased a ticket. Limit is 1 ticket per customer."))
 		case errors.Is(err, appredis.ErrActiveHoldExists):
 			ttlVal, _ := h.redisSvc.GetHoldTTL(ctx, sessionID)
 			expiresAt := time.Now().Add(ttlVal)
-			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-				appErrors.ErrCodeActiveHoldExists,
+			c.Error(appErrors.NewWithDetails(http.StatusBadRequest, appErrors.ErrCodeActiveHoldExists,
 				"You already have an active reservation. Please complete your purchase or wait for it to expire.",
 				gin.H{
 					"expires_at":        expiresAt.Format(time.RFC3339),
 					"seconds_remaining": int64(ttlVal.Seconds()),
-				},
-			))
+				}))
 		case errors.Is(err, appredis.ErrTicketUnavailable):
-			c.JSON(http.StatusConflict, types.NewErrorResponse(
-				appErrors.ErrCodeTicketUnavailable,
-				"Sorry, all tickets in this category are currently reserved or sold. Please check back soon.",
-				nil,
-			))
+			c.Error(appErrors.New(http.StatusConflict, appErrors.ErrCodeTicketUnavailable,
+				"Sorry, all tickets in this category are currently reserved or sold. Please check back soon."))
 		default:
 			logger.Error("Redis reservation hold failed to execute", "error", err, "session_id", sessionID)
-			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-				appErrors.ErrCodeInternal,
-				"Internal server error",
-				nil,
-			))
+			c.Error(appErrors.NewInternal(err, "Internal server error"))
 		}
 		return
 	}
@@ -122,11 +98,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	if err != nil {
 		logger.Error("Failed to start database transaction for ticket hold", "error", err)
 		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeReservationFailed,
-			"Failed to start reservation transaction",
-			nil,
-		))
+		c.Error(appErrors.Wrap(err, appErrors.ErrCodeReservationFailed, "Failed to start reservation transaction", http.StatusInternalServerError))
 		return
 	}
 	defer tx.Rollback() // Safe to call: no-op if committed
@@ -141,11 +113,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		logger.Error("Failed to clean up expired holds for session during reservation", "error", err, "session_id", sessionID)
 		tx.Rollback()
 		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeReservationFailed,
-			"Reservation failed during database cleanup",
-			nil,
-		))
+		c.Error(appErrors.Wrap(err, appErrors.ErrCodeReservationFailed, "Reservation failed during database cleanup", http.StatusInternalServerError))
 		return
 	}
 
@@ -165,11 +133,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		logger.Error("Failed to lock ticket row for hold", "error", err, "ticket_id", ticketID)
 		tx.Rollback()
 		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeReservationFailed,
-			"Reservation failed while locking ticket row",
-			nil,
-		))
+		c.Error(appErrors.Wrap(err, appErrors.ErrCodeReservationFailed, "Reservation failed while locking ticket row", http.StatusInternalServerError))
 		return
 	}
 
@@ -178,11 +142,8 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
 
 		if currentStatus == "Sold" {
-			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-				appErrors.ErrCodePurchaseLimitExceed,
-				"You have already purchased a ticket. Limit is 1 ticket per customer.",
-				nil,
-			))
+			c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodePurchaseLimitExceed,
+				"You have already purchased a ticket. Limit is 1 ticket per customer."))
 			return
 		}
 
@@ -194,14 +155,12 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 				secRem = 0
 			}
 		}
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-			appErrors.ErrCodeActiveHoldExists,
+		c.Error(appErrors.NewWithDetails(http.StatusBadRequest, appErrors.ErrCodeActiveHoldExists,
 			"You already have an active reservation. Please complete your purchase or wait for it to expire.",
 			gin.H{
 				"expires_at":        currentExpiresAt.Time.Format(time.RFC3339),
 				"seconds_remaining": secRem,
-			},
-		))
+			}))
 		return
 	}
 
@@ -217,11 +176,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		logger.Error("Database update failed for ticket hold", "error", err, "ticket_id", ticketID)
 		tx.Rollback()
 		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeReservationFailed,
-			"Reservation failed during database update",
-			nil,
-		))
+		c.Error(appErrors.Wrap(err, appErrors.ErrCodeReservationFailed, "Reservation failed during database update", http.StatusInternalServerError))
 		return
 	}
 
@@ -230,11 +185,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		logger.Error("No rows affected on database update for ticket hold", "ticket_id", ticketID)
 		tx.Rollback()
 		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeReservationFailed,
-			"Reservation failed; ticket already reserved or unavailable",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusInternalServerError, appErrors.ErrCodeReservationFailed, "Reservation failed; ticket already reserved or unavailable"))
 		return
 	}
 
@@ -242,11 +193,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 	if err := tx.Commit(); err != nil {
 		logger.Error("Database commit failed for ticket hold", "error", err)
 		h.redisSvc.ReleaseHold(ctx, sessionID, req.Category, ticketID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeReservationFailed,
-			"Reservation failed during database commit",
-			nil,
-		))
+		c.Error(appErrors.Wrap(err, appErrors.ErrCodeReservationFailed, "Reservation failed during database commit", http.StatusInternalServerError))
 		return
 	}
 
@@ -283,11 +230,7 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 
 	sessionIDVal, exists := c.Get("session_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(
-			appErrors.ErrCodeSessionRequired,
-			"Session token is required",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusUnauthorized, appErrors.ErrCodeSessionRequired, "Session token is required"))
 		return
 	}
 	sessionID := sessionIDVal.(string)
@@ -301,26 +244,18 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 
 	// Query active hold where status is 'Holding' and expires_at is in the future
 	err := h.db.QueryRowContext(ctx, `
-		SELECT id, ticket_code, category, price, status, held_at, expires_at 
-		FROM tickets 
+		SELECT id, ticket_code, category, price, status, held_at, expires_at
+		FROM tickets
 		WHERE session_id = $1 AND status = 'Holding' AND expires_at > NOW()
 	`, sessionID).Scan(&ticketID, &ticketCode, &category, &price, &status, &heldAt, &expiresAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, types.NewErrorResponse(
-				appErrors.ErrCodeNoActiveHold,
-				"No active reservation was found for this session.",
-				nil,
-			))
+			c.Error(appErrors.New(http.StatusNotFound, appErrors.ErrCodeNoActiveHold, "No active reservation was found for this session."))
 			return
 		}
 		logger.Error("Database query failed while fetching active hold", "error", err, "session_id", sessionID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Internal server error",
-			nil,
-		))
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 

@@ -8,10 +8,16 @@ type ResponseEnvelope[T any] struct {
 }
 
 // APIError represents the structured error body returned to the client.
+// Code and Message are kept at their existing paths for frontend backward
+// compatibility; StatusCode/Timestamp/Path are additive fields populated by
+// the global error handler so every error response carries the same shape.
 type APIError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Details any    `json:"details,omitempty"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	StatusCode int    `json:"statusCode"`
+	Timestamp  string `json:"timestamp"`
+	Path       string `json:"path"`
+	Details    any    `json:"details,omitempty"`
 }
 
 // PaginationMetadata contains pagination details for list responses.
@@ -30,14 +36,3 @@ func NewSuccessResponse[T any](data T) ResponseEnvelope[T] {
 	}
 }
 
-// NewErrorResponse creates an error response envelope.
-func NewErrorResponse(code string, message string, details any) ResponseEnvelope[any] {
-	return ResponseEnvelope[any]{
-		Success: false,
-		Error: &APIError{
-			Code:    code,
-			Message: message,
-			Details: details,
-		},
-	}
-}

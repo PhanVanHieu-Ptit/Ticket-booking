@@ -23,21 +23,13 @@ func NewPaymentController(service Service) *PaymentController {
 func (ctrl *PaymentController) Checkout(c *gin.Context) {
 	var req CheckoutRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-			appErrors.ErrCodeInvalidInput,
-			"Invalid request payload",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodeInvalidInput, "Invalid request payload"))
 		return
 	}
 
 	sessionIDVal, exists := c.Get("session_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(
-			appErrors.ErrCodeSessionRequired,
-			"Session token is required",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusUnauthorized, appErrors.ErrCodeSessionRequired, "Session token is required"))
 		return
 	}
 	sessionID := sessionIDVal.(string)
@@ -52,12 +44,7 @@ func (ctrl *PaymentController) Checkout(c *gin.Context) {
 	)
 
 	if err != nil {
-		appErr := appErrors.FromError(err)
-		c.JSON(appErr.HTTPStatus, types.NewErrorResponse(
-			appErr.Code,
-			appErr.Message,
-			appErr.Details,
-		))
+		c.Error(err)
 		return
 	}
 

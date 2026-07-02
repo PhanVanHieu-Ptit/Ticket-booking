@@ -13,6 +13,7 @@ import (
 
 	"strconv"
 
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/middleware"
 	appredis "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
 	appDB "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/db"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
@@ -95,6 +96,7 @@ func TestReservationFlow(t *testing.T) {
 	handler := NewReservationHandler(dbConn, redisSvc, jwtSecret)
 
 	r := gin.New()
+	r.Use(middleware.ErrorHandlerMiddleware(false))
 	// Mock middleware to inject session_id
 	r.Use(func(c *gin.Context) {
 		sessID := c.GetHeader("X-Test-Session-ID")

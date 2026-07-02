@@ -3,14 +3,16 @@ package logger
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"runtime/debug"
 	"strings"
 	"time"
 
+	apperrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/httpx"
 	"github.com/gin-gonic/gin"
 )
 
@@ -98,8 +100,10 @@ func GinMiddleware() gin.HandlerFunc {
 }
 
 // RecoveryMiddleware returns a Gin middleware that recovers from any panics, logs the stack trace,
-// and returns a standardized 500 error response.
-func RecoveryMiddleware() gin.HandlerFunc {
+// and returns a standardized 500 error response via the shared httpx.RespondError writer, keeping
+// the panic path identical in shape to every other error response. isProd controls whether the
+// panic's internal details are redacted from the response body.
+func RecoveryMiddleware(isProd bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -132,13 +136,9 @@ func RecoveryMiddleware() gin.HandlerFunc {
 					slog.String("stack", string(debug.Stack())),
 				)
 
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-					"success": false,
-					"error": gin.H{
-						"code":    "INTERNAL_ERROR",
-						"message": "An unexpected error occurred",
-					},
-				})
+				appErr := apperrors.NewInternal(fmt.Errorf("panic: %v", err), "An unexpected error occurred")
+				c.Abort()
+				httpx.RespondError(c, appErr, isProd)
 			}
 		}()
 		c.Next()
