@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -415,4 +417,172 @@ func TestReservationFlow(t *testing.T) {
 
 func intToStr(i int64) string {
 	return strconv.FormatInt(i, 10)
+}
+
+// TestReserveTicket_ConcurrentHoldRace fires many concurrent reservation
+// requests, from distinct sessions, for the same category when only one
+// ticket is available. It asserts the atomic Redis Lua hold script (see
+// internal/redis/service.go holdTicketScript) lets exactly one request win
+// the ticket, every other request is rejected with TICKET_UNAVAILABLE, and
+// the database never ends up oversold.
+func TestReserveTicket_ConcurrentHoldRace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// 1. Connect to Redis (isolation on DB 1)
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/1"
+	} else {
+		redisURL = strings.Replace(redisURL, "/0", "/1", 1)
+	}
+
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		t.Fatalf("failed to parse Redis URL: %v", err)
+	}
+	rdb := redis.NewClient(opts)
+	ctx := context.Background()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		t.Skip("Redis is not running, skipping integration tests")
+		return
+	}
+	defer rdb.Close()
+
+	// 2. Connect to PostgreSQL
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:postgres@localhost:5432/ticket_booking?sslmode=disable"
+	}
+	dbConn, err := appDB.Init(dbURL)
+	if err != nil {
+		t.Skipf("PostgreSQL connection failed, skipping integration tests: %v", err)
+		return
+	}
+	defer appDB.Close()
+
+	// 3. Set up SSE Broker
+	sse.GlobalBroker = sse.NewBroker()
+	sse.GlobalBroker.Start()
+
+	const numConcurrent = 20
+	sessionIDs := make([]string, numConcurrent)
+	for i := 0; i < numConcurrent; i++ {
+		sessionIDs[i] = fmt.Sprintf("sess_race_test_%d", i)
+	}
+
+	// 4. Cleanup old test data
+	cleanup := func() {
+		delKeys := []string{"tickets:available:VIP", "tickets:available:Standard", "purchased:sessions"}
+		for _, s := range sessionIDs {
+			delKeys = append(delKeys, "hold:"+s)
+		}
+		rdb.Del(ctx, delKeys...)
+		_, _ = dbConn.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_code LIKE 'TKT-RACE-%'")
+	}
+	cleanup()
+	defer cleanup()
+
+	// 5. Insert exactly ONE available ticket for the whole race to compete over
+	var vipTicketID int64
+	err = dbConn.QueryRowContext(ctx, `
+		INSERT INTO tickets (ticket_code, category, price, status)
+		VALUES ('TKT-RACE-VIP-001', 'VIP', 100.0, 'Available')
+		RETURNING id
+	`).Scan(&vipTicketID)
+	if err != nil {
+		t.Fatalf("failed to insert VIP test ticket: %v", err)
+	}
+	rdb.SAdd(ctx, "tickets:available:VIP", vipTicketID)
+
+	jwtSecret := []byte("test-jwt-secret-key-2026")
+	redisSvc := appredis.NewRedisService(rdb)
+	handler := NewReservationHandler(dbConn, redisSvc, jwtSecret)
+
+	r := gin.New()
+	r.Use(middleware.ErrorHandlerMiddleware(false))
+	r.Use(func(c *gin.Context) {
+		sessID := c.GetHeader("X-Test-Session-ID")
+		if sessID != "" {
+			c.Set("session_id", sessID)
+			c.Set("session_expires_at", time.Now().Add(30*time.Minute))
+		}
+		c.Next()
+	})
+	r.POST("/api/v1/tickets/reserve", handler.ReserveTicket)
+
+	// 6. Fire all requests as close to simultaneously as possible: every
+	// goroutine blocks on `start` until all are spawned, then they're
+	// released together (the Go equivalent of `Promise.all` over N
+	// in-flight requests).
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	statusCodes := make([]int, numConcurrent)
+	errorCodes := make([]string, numConcurrent)
+
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+
+			body := `{"category": "VIP"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/tickets/reserve", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Test-Session-ID", sessionIDs[idx])
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			statusCodes[idx] = w.Code
+			if w.Code != http.StatusCreated {
+				var resp struct {
+					Error struct {
+						Code string `json:"code"`
+					} `json:"error"`
+				}
+				_ = json.Unmarshal(w.Body.Bytes(), &resp)
+				errorCodes[idx] = resp.Error.Code
+			}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// 7. Exactly one request must have won the hold (201 Created); every
+	// other request must have been cleanly rejected as sold out.
+	successCount := 0
+	for i, code := range statusCodes {
+		switch code {
+		case http.StatusCreated:
+			successCount++
+		case http.StatusConflict:
+			if errorCodes[i] != "TICKET_UNAVAILABLE" {
+				t.Errorf("request %d: expected TICKET_UNAVAILABLE, got code=%q", i, errorCodes[i])
+			}
+		default:
+			t.Errorf("request %d: unexpected status code %d (error=%q)", i, code, errorCodes[i])
+		}
+	}
+	if successCount != 1 {
+		t.Fatalf("expected exactly 1 successful hold out of %d concurrent requests, got %d", numConcurrent, successCount)
+	}
+
+	// 8. The database must never be oversold: exactly one ticket Holding.
+	var holdingCount int
+	err = dbConn.QueryRowContext(ctx, "SELECT COUNT(*) FROM tickets WHERE id = $1 AND status = 'Holding'", vipTicketID).Scan(&holdingCount)
+	if err != nil {
+		t.Fatalf("failed to query ticket status: %v", err)
+	}
+	if holdingCount != 1 {
+		t.Errorf("expected exactly 1 ticket in Holding status, got %d", holdingCount)
+	}
+
+	// Redis available set must be fully drained.
+	remaining, err := rdb.SCard(ctx, "tickets:available:VIP").Result()
+	if err != nil {
+		t.Fatalf("failed to query Redis available set: %v", err)
+	}
+	if remaining != 0 {
+		t.Errorf("expected Redis VIP available set to be empty after race, got %d remaining", remaining)
+	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 func main() {
@@ -68,6 +69,11 @@ func main() {
 
 	// Set Gin mode based on config
 	gin.SetMode(cfg.GinMode)
+
+	// Global request validation: reject any JSON body field that isn't
+	// declared on the target DTO struct, instead of silently ignoring it
+	// (equivalent to a ValidationPipe with whitelist/forbidNonWhitelisted).
+	binding.EnableDecoderDisallowUnknownFields = true
 
 	// Initialize Gin engine
 	r := gin.New()

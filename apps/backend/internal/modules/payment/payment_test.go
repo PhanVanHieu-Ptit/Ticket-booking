@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -236,6 +237,153 @@ func TestPaymentCheckoutFlow(t *testing.T) {
 	existsKey := rdb.Exists(ctx, "idempotency:"+testSessionID2+":"+idempotencyKeyFail).Val()
 	if existsKey != 0 {
 		t.Errorf("expected Redis idempotency key to be deleted on failure, but it exists")
+	}
+}
+
+// TestPaymentCheckout_ConcurrentIdempotentRequests fires many concurrent
+// checkout requests, all reusing the same Idempotency-Key, ticket and
+// session, simulating a client double-click or a network-retry storm. The
+// IdempotencyMiddleware's own check-then-set (GET, then SET) is not atomic,
+// so it cannot guarantee mutual exclusion by itself; the real safety net is
+// the row lock taken in paymentService.Checkout (LockTicket ... FOR UPDATE)
+// plus the idx_orders_ticket_id_paid unique constraint. This test asserts
+// that invariant holds under real concurrency: no matter how many identical
+// requests race in, exactly one 'Paid' order is ever created for the ticket.
+func TestPaymentCheckout_ConcurrentIdempotentRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/1"
+	} else {
+		redisURL = strings.Replace(redisURL, "/0", "/1", 1)
+	}
+
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		t.Fatalf("failed to parse Redis URL: %v", err)
+	}
+	rdb := redis.NewClient(opts)
+	ctx := context.Background()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		t.Skip("Redis is not running, skipping integration tests")
+		return
+	}
+	defer rdb.Close()
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:postgres@localhost:5432/ticket_booking?sslmode=disable"
+	}
+	dbConn, err := appDB.Init(dbURL)
+	if err != nil {
+		t.Skipf("PostgreSQL connection failed, skipping integration tests: %v", err)
+		return
+	}
+	defer appDB.Close()
+
+	sse.GlobalBroker = sse.NewBroker()
+	sse.GlobalBroker.Start()
+
+	testSessionID := "sess_payment_race_test"
+	rdb.Del(ctx, "hold:"+testSessionID, "purchased:sessions")
+	_, _ = dbConn.ExecContext(ctx, "DELETE FROM orders WHERE session_id = $1", testSessionID)
+	_, _ = dbConn.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_code LIKE 'TKT-PMTRACE-%'")
+	defer func() {
+		_, _ = dbConn.ExecContext(ctx, "DELETE FROM orders WHERE session_id = $1", testSessionID)
+		_, _ = dbConn.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_code LIKE 'TKT-PMTRACE-%'")
+		rdb.Del(ctx, "hold:"+testSessionID, "purchased:sessions")
+	}()
+
+	var ticketID int64
+	err = dbConn.QueryRowContext(ctx, `
+		INSERT INTO tickets (ticket_code, category, price, status, session_id, held_at, expires_at)
+		VALUES ('TKT-PMTRACE-VIP-001', 'VIP', 150.0, 'Holding', $1, NOW(), NOW() + INTERVAL '5 minutes')
+		RETURNING id
+	`, testSessionID).Scan(&ticketID)
+	if err != nil {
+		t.Fatalf("failed to insert holding test ticket: %v", err)
+	}
+	rdb.Set(ctx, "hold:"+testSessionID, fmt.Sprintf("%d:VIP", ticketID), 5*time.Minute)
+
+	module := NewModule(dbConn, rdb)
+
+	r := gin.New()
+	r.Use(middleware.ErrorHandlerMiddleware(false))
+	r.Use(func(c *gin.Context) {
+		c.Set("session_id", testSessionID)
+		c.Next()
+	})
+	r.Use(middleware.IdempotencyMiddleware(rdb))
+	r.POST("/api/v1/payments/checkout", module.Controller.Checkout)
+
+	sharedIdempotencyKey := uuid.New().String()
+	reqBody := CheckoutRequest{
+		TicketID:       ticketID,
+		Email:          "race@example.com",
+		CardHolderName: "Race Condition",
+		PaymentMethod:  "credit_card",
+		SimulateStatus: "success",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	const numConcurrent = 15
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	statusCodes := make([]int, numConcurrent)
+
+	for i := 0; i < numConcurrent; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/payments/checkout", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", sharedIdempotencyKey)
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			statusCodes[idx] = w.Code
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// Every response must be one of: success, cached/duplicate-in-progress,
+	// or hold-already-consumed. Anything else (e.g. a 500) means the race
+	// wasn't handled safely.
+	successCount := 0
+	for i, code := range statusCodes {
+		switch code {
+		case http.StatusOK:
+			successCount++
+		case http.StatusConflict, http.StatusGone:
+			// DUPLICATE_REQUEST (in-flight) or hold no longer 'Holding'
+			// (another request already consumed it) - both expected.
+		default:
+			t.Errorf("request %d: unexpected status code %d", i, code)
+		}
+	}
+	if successCount < 1 {
+		t.Fatalf("expected at least 1 successful checkout out of %d concurrent identical requests, got %d", numConcurrent, successCount)
+	}
+
+	// The invariant that actually matters: no matter how many identical
+	// requests raced in, exactly one 'Paid' order was ever created.
+	var paidOrderCount int
+	err = dbConn.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE ticket_id = $1 AND status = 'Paid'", ticketID).Scan(&paidOrderCount)
+	if err != nil {
+		t.Fatalf("failed to count paid orders: %v", err)
+	}
+	if paidOrderCount != 1 {
+		t.Errorf("expected exactly 1 paid order despite %d concurrent identical requests, got %d", numConcurrent, paidOrderCount)
+	}
+
+	var ticketStatus string
+	err = dbConn.QueryRowContext(ctx, "SELECT status FROM tickets WHERE id = $1", ticketID).Scan(&ticketStatus)
+	if err != nil || ticketStatus != "Sold" {
+		t.Errorf("expected ticket status Sold, got %q (error: %v)", ticketStatus, err)
 	}
 }
 
