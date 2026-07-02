@@ -17,16 +17,24 @@ export function useTicketAvailability() {
   const isTabActiveRef = useRef<boolean>(true);
   const tabInactiveTimeoutRef = useRef<any>(null);
   const pollIntervalRef = useRef<any>(null);
+  // Mirrors `categories` for synchronous reads inside the SSE onopen handler
+  // (see connectSSE below), which closes over stale state otherwise.
+  const categoriesRef = useRef<TicketCategoryAvailability[]>([]);
+  useEffect(() => {
+    categoriesRef.current = categories;
+  }, [categories]);
 
-  // Fetch initial counts from REST
-  const fetchInitialAvailability = useCallback(async () => {
+  // Fetch initial counts from REST. Returns whether it actually populated data.
+  const fetchInitialAvailability = useCallback(async (): Promise<boolean> => {
     try {
       setLoading(true);
       const data = await bookingApi.getAvailability();
       setCategories(data);
       setError(null);
+      return true;
     } catch (err: any) {
       setError(err.message || "Failed to fetch ticket availability");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -63,7 +71,20 @@ export function useTicketAvailability() {
     es.onopen = () => {
       setIsConnected(true);
       reconnectDelayRef.current = 1000; // Reset delay on successful connection
-      stopPolling(); // Live stream is back, no need to keep polling
+
+      if (categoriesRef.current.length > 0) {
+        stopPolling(); // Live stream is back, no need to keep polling
+      } else {
+        // We've never had a successful initial REST fetch (e.g. it failed
+        // while the network was down, before this connection came up).
+        // initial_state/inventory_update below only patch existing entries
+        // (see prev.map() in each handler), so there's nothing for them to
+        // patch onto. Re-fetch now that the network is back, and only stop
+        // polling once that fetch actually populates data.
+        fetchInitialAvailability().then((ok) => {
+          if (ok) stopPolling();
+        });
+      }
     };
 
     es.addEventListener("initial_state", (e: MessageEvent) => {
@@ -140,7 +161,7 @@ export function useTicketAvailability() {
         }, delay);
       }
     };
-  }, [startPolling, stopPolling]);
+  }, [startPolling, stopPolling, fetchInitialAvailability]);
 
   const disconnectSSE = useCallback(() => {
     if (eventSourceRef.current) {

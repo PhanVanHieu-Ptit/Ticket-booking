@@ -160,6 +160,16 @@ func main() {
 		// Payment endpoints
 		v1.POST("/payments/checkout", middleware.IdempotencyMiddleware(rdb), paymentModule.Controller.Checkout)
 
+		// Test-only endpoints: let e2e/integration tests deterministically
+		// manipulate inventory (e.g. force a category down to a single seat
+		// to exercise oversell/race-condition scenarios). Never mounted in
+		// production, since these mutate/destroy ticket inventory state.
+		if !cfg.IsProduction() {
+			testHandler := handlers.NewTestHandler(database)
+			v1.POST("/test/reset-inventory", testHandler.ResetInventory)
+			logger.Info("Test-only routes mounted", "route", "/api/v1/test/reset-inventory", "app_env", cfg.AppEnv)
+		}
+
 		// Admin route group
 		admin := v1.Group("/admin")
 		{

@@ -23,4 +23,4 @@ SELECT setval('tickets_id_seq', 500);
 
 -- 3. Seed Default Admin Config (passcode: 'admin123' bcrypt-hashed)
 INSERT INTO admin_configs (key, value, description)
-VALUES ('admin_passcode', '$2a$12$Z.jM4wH14v6.z37N7Gj1IeaW6tCq1G.tI9vN0X184k4O3h1u5yO2O', 'Bcrypt hash of the admin dashboard access passcode');
+VALUES ('admin_passcode', '$2a$12$LDPGLECY88uBIEuTm4nvQe3bHsE4HwyXX8VQCRj7hYpUAJEUVLdE6', 'Bcrypt hash of the admin dashboard access passcode');
