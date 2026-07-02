@@ -75,12 +75,13 @@ The system is a high-concurrency ticket booking application designed to handle a
 - [x] **TS-10: Payment Checkout Frontend**
   - Checkout form and payment simulation.
   - Success/failure feedback screens.
+- [x] **TS-11: Admin Analytics**
+  - Admin login page.
+  - Dashboard displaying real-time sales velocity, total revenue, and active locks.
 
 ### Pending Tasks
 
-- [ ] **TS-11: Admin Analytics**
-  - Admin login page.
-  - Dashboard displaying real-time sales velocity, total revenue, and active locks.
+*(None. All roadmap tasks are completed.)*
 
 ---
 
@@ -104,11 +105,6 @@ The system is a high-concurrency ticket booking application designed to handle a
 
 ## 6. Next Recommended Task
 
-### **`TS-09: Payment Checkout Backend`**
-- **Objective**: Implement checkout API endpoint to complete reservation purchases.
-- **Why**: Allows users to complete their purchases and transition their held tickets permanently to `Sold`, finalizing the main transaction path of the application.
-- **Steps**:
-  1. Implement `Checkout` controller, service, and repository operations under the `internal/modules/payment/` skeleton.
-  2. Implement Redis-backed idempotency middleware to enforce `Idempotency-Key` header constraints.
-  3. Wire up payment route `POST /api/v1/payments/checkout` in `main.go`.
-  4. Trigger SSE broker to broadcast sold-out/sales velocity metrics on checkout successes.
+### **`Project Optimization & Concurrency Testing`**
+- **Objective**: Conduct load testing (e.g. using k6 or locust) to simulate the 5,000 concurrent user spikes, verify database connection pooling, and monitor PgBouncer/Redis performance thresholds.
+
