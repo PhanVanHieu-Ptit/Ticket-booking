@@ -156,14 +156,8 @@ func main() {
 			adminAuth := admin.Group("")
 			adminAuth.Use(middleware.AdminAuthMiddleware(cfg.JWTSecret))
 			{
-				adminAuth.GET("/metrics", func(c *gin.Context) {
-					c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{
-						"message": "protected metrics content",
-					}))
-				})
-				adminAuth.GET("/holds", func(c *gin.Context) {
-					c.JSON(http.StatusOK, types.NewSuccessResponse([]any{}))
-				})
+				adminAuth.GET("/metrics", adminHandler.GetMetrics)
+				adminAuth.GET("/holds", adminHandler.GetHolds)
 			}
 		}
 	}

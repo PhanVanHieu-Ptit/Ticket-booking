@@ -92,3 +92,178 @@ func (h *AdminHandler) Login(c *gin.Context) {
 		"expires_at": expiresAt.Format(time.RFC3339),
 	}))
 }
+
+type InventoryBreakdown struct {
+	VIP      int `json:"VIP"`
+	Standard int `json:"Standard"`
+}
+
+type MetricsResponse struct {
+	TotalTicketsSold   int                `json:"total_tickets_sold"`
+	TotalRevenue       float64            `json:"total_revenue"`
+	RemainingInventory InventoryBreakdown `json:"remaining_inventory"`
+	HeldInventory      InventoryBreakdown `json:"held_inventory"`
+	AvailableInventory InventoryBreakdown `json:"available_inventory"`
+}
+
+type HoldDetail struct {
+	TicketID         int     `json:"ticket_id"`
+	TicketCode       string  `json:"ticket_code"`
+	Category         string  `json:"category"`
+	Price            float64 `json:"price"`
+	SessionID        string  `json:"session_id"`
+	ExpiresAt        string  `json:"expires_at"`
+	SecondsRemaining int     `json:"seconds_remaining"`
+}
+
+// GetMetrics returns statistics on ticket sales, revenue, and inventories.
+func (h *AdminHandler) GetMetrics(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var totalTicketsSold int
+	err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tickets WHERE status = 'Sold'").Scan(&totalTicketsSold)
+	if err != nil {
+		logger.Error("Failed to fetch total tickets sold", "error", err)
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+			errors.ErrCodeInternal,
+			"An unexpected database error occurred",
+			nil,
+		))
+		return
+	}
+
+	var totalRevenue float64
+	err = h.db.QueryRowContext(ctx, "SELECT COALESCE(SUM(price), 0) FROM tickets WHERE status = 'Sold'").Scan(&totalRevenue)
+	if err != nil {
+		logger.Error("Failed to fetch total revenue", "error", err)
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+			errors.ErrCodeInternal,
+			"An unexpected database error occurred",
+			nil,
+		))
+		return
+	}
+
+	rows, err := h.db.QueryContext(ctx, "SELECT category, status, COUNT(*) FROM tickets GROUP BY category, status")
+	if err != nil {
+		logger.Error("Failed to fetch inventory breakdown", "error", err)
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+			errors.ErrCodeInternal,
+			"An unexpected database error occurred",
+			nil,
+		))
+		return
+	}
+	defer rows.Close()
+
+	var (
+		availVIP, availStd int
+		heldVIP, heldStd   int
+	)
+
+	for rows.Next() {
+		var category, status string
+		var count int
+		if err := rows.Scan(&category, &status, &count); err != nil {
+			logger.Error("Failed to scan inventory breakdown row", "error", err)
+			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+				errors.ErrCodeInternal,
+				"An unexpected database error occurred",
+				nil,
+			))
+			return
+		}
+		switch category {
+		case "VIP":
+			switch status {
+			case "Available":
+				availVIP = count
+			case "Holding":
+				heldVIP = count
+			}
+		case "Standard":
+			switch status {
+			case "Available":
+				availStd = count
+			case "Holding":
+				heldStd = count
+			}
+		}
+	}
+
+	metrics := MetricsResponse{
+		TotalTicketsSold: totalTicketsSold,
+		TotalRevenue:     totalRevenue,
+		RemainingInventory: InventoryBreakdown{
+			VIP:      availVIP + heldVIP,
+			Standard: availStd + heldStd,
+		},
+		HeldInventory: InventoryBreakdown{
+			VIP:      heldVIP,
+			Standard: heldStd,
+		},
+		AvailableInventory: InventoryBreakdown{
+			VIP:      availVIP,
+			Standard: availStd,
+		},
+	}
+
+	c.JSON(http.StatusOK, types.NewSuccessResponse(metrics))
+}
+
+// GetHolds returns the active reservation holds queue.
+func (h *AdminHandler) GetHolds(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	rows, err := h.db.QueryContext(ctx, `
+		SELECT id, ticket_code, category, price, session_id, expires_at 
+		FROM tickets 
+		WHERE status = 'Holding' 
+		ORDER BY expires_at ASC
+	`)
+	if err != nil {
+		logger.Error("Failed to query active holds", "error", err)
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+			errors.ErrCodeInternal,
+			"An unexpected database error occurred",
+			nil,
+		))
+		return
+	}
+	defer rows.Close()
+
+	holds := []HoldDetail{}
+	for rows.Next() {
+		var hold HoldDetail
+		var expiresAt time.Time
+		err := rows.Scan(
+			&hold.TicketID,
+			&hold.TicketCode,
+			&hold.Category,
+			&hold.Price,
+			&hold.SessionID,
+			&expiresAt,
+		)
+		if err != nil {
+			logger.Error("Failed to scan hold row", "error", err)
+			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
+				errors.ErrCodeInternal,
+				"An unexpected database error occurred",
+				nil,
+			))
+			return
+		}
+
+		hold.ExpiresAt = expiresAt.Format(time.RFC3339)
+		secondsRemaining := int(time.Until(expiresAt).Seconds())
+		if secondsRemaining < 0 {
+			secondsRemaining = 0
+		}
+		hold.SecondsRemaining = secondsRemaining
+
+		holds = append(holds, hold)
+	}
+
+	c.JSON(http.StatusOK, types.NewSuccessResponse(holds))
+}
+
