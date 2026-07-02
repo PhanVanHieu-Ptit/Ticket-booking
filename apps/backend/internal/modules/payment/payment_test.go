@@ -90,6 +90,7 @@ func TestPaymentCheckoutFlow(t *testing.T) {
 	module := NewModule(dbConn, rdb)
 
 	r := gin.New()
+	r.Use(middleware.ErrorHandlerMiddleware(false))
 	// Mock middleware to inject session_id
 	r.Use(func(c *gin.Context) {
 		c.Set("session_id", testSessionID)
@@ -189,6 +190,7 @@ func TestPaymentCheckoutFlow(t *testing.T) {
 	rdb.Set(ctx, "hold:"+testSessionID2, fmt.Sprintf("%d:VIP", ticketID2), 5*time.Minute)
 
 	rFail := gin.New()
+	rFail.Use(middleware.ErrorHandlerMiddleware(false))
 	rFail.Use(func(c *gin.Context) {
 		c.Set("session_id", testSessionID2)
 		c.Next()

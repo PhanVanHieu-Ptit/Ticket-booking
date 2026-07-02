@@ -43,14 +43,14 @@ func (h *AvailabilityHandler) GetAvailability(c *gin.Context) {
 	vipCount, err := h.rdb.SCard(ctx, "tickets:available:VIP").Result()
 	if err != nil {
 		logger.Error("Failed to fetch available VIP count from Redis", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(appErrors.ErrCodeInternal, "Internal server error", nil))
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 
 	stdCount, err := h.rdb.SCard(ctx, "tickets:available:Standard").Result()
 	if err != nil {
 		logger.Error("Failed to fetch available Standard count from Redis", "error", err)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(appErrors.ErrCodeInternal, "Internal server error", nil))
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 
@@ -100,13 +100,15 @@ func (h *AvailabilityHandler) StreamAvailability(c *gin.Context) {
 
 	// Session token validation is mandatory
 	if tokenStr == "" {
-		c.AbortWithStatusJSON(http.StatusBadRequest, types.NewErrorResponse(appErrors.ErrCodeInvalidSessionToken, "Session token is required to establish stream", nil))
+		c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodeInvalidSessionToken, "Session token is required to establish stream"))
+		c.Abort()
 		return
 	}
 
 	_, _, err := session.VerifySessionToken(tokenStr, h.jwtSecret)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, types.NewErrorResponse(appErrors.ErrCodeInvalidSessionToken, "Invalid or expired session token", nil))
+		c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodeInvalidSessionToken, "Invalid or expired session token"))
+		c.Abort()
 		return
 	}
 

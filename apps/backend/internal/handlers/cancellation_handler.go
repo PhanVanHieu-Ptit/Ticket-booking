@@ -18,11 +18,7 @@ func (h *ReservationHandler) CancelHold(c *gin.Context) {
 	// 1. Fetch session ID from request context (set by SessionMiddleware)
 	sessionIDVal, exists := c.Get("session_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(
-			appErrors.ErrCodeSessionRequired,
-			"Session token is required",
-			nil,
-		))
+		c.Error(appErrors.New(http.StatusUnauthorized, appErrors.ErrCodeSessionRequired, "Session token is required"))
 		return
 	}
 	sessionID := sessionIDVal.(string)
@@ -31,11 +27,7 @@ func (h *ReservationHandler) CancelHold(c *gin.Context) {
 	tx, err := h.db.BeginTx(ctx, nil)
 	if err != nil {
 		logger.Error("Failed to start database transaction for cancelling hold", "error", err, "session_id", sessionID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Internal server error",
-			nil,
-		))
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 	defer tx.Rollback()
@@ -44,54 +36,38 @@ func (h *ReservationHandler) CancelHold(c *gin.Context) {
 	var ticketID int64
 	var category string
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, category 
-		FROM tickets 
-		WHERE session_id = $1 AND status = 'Holding' AND expires_at > NOW() 
+		SELECT id, category
+		FROM tickets
+		WHERE session_id = $1 AND status = 'Holding' AND expires_at > NOW()
 		FOR UPDATE
 	`, sessionID).Scan(&ticketID, &category)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusBadRequest, types.NewErrorResponse(
-				appErrors.ErrCodeNoActiveHold,
-				"No active reservation was found for this session.",
-				nil,
-			))
+			c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodeNoActiveHold, "No active reservation was found for this session."))
 			return
 		}
 		logger.Error("Database query failed while fetching hold to cancel", "error", err, "session_id", sessionID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Internal server error",
-			nil,
-		))
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 
 	// 4. Update PostgreSQL ticket row to Available
 	_, err = tx.ExecContext(ctx, `
-		UPDATE tickets 
-		SET status = 'Available', session_id = NULL, held_at = NULL, expires_at = NULL, updated_at = NOW() 
+		UPDATE tickets
+		SET status = 'Available', session_id = NULL, held_at = NULL, expires_at = NULL, updated_at = NOW()
 		WHERE id = $1
 	`, ticketID)
 	if err != nil {
 		logger.Error("Database update failed while cancelling hold", "error", err, "ticket_id", ticketID, "session_id", sessionID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Internal server error",
-			nil,
-		))
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 
 	// 5. Commit PostgreSQL transaction
 	if err := tx.Commit(); err != nil {
 		logger.Error("Database commit failed while cancelling hold", "error", err, "ticket_id", ticketID, "session_id", sessionID)
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			appErrors.ErrCodeInternal,
-			"Internal server error",
-			nil,
-		))
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 

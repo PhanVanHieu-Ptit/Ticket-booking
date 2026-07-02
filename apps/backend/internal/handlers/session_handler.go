@@ -23,11 +23,7 @@ func (h *SessionHandler) InitializeSession(c *gin.Context) {
 	expiresAt, okExp := c.Get("session_expires_at")
 
 	if !ok || !okExp {
-		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(
-			errors.ErrCodeInternal,
-			"Session not initialized in request context",
-			nil,
-		))
+		c.Error(errors.New(http.StatusInternalServerError, errors.ErrCodeInternal, "Session not initialized in request context"))
 		return
 	}
 

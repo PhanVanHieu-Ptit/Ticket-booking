@@ -15,6 +15,7 @@ func TestAdminAuthMiddleware_MissingHeader(t *testing.T) {
 	r := gin.New()
 
 	jwtSecret := "test-jwt-secret-key-2026"
+	r.Use(ErrorHandlerMiddleware(false))
 	r.Use(AdminAuthMiddleware(jwtSecret))
 
 	r.GET("/admin/test", func(c *gin.Context) {
@@ -39,6 +40,7 @@ func TestAdminAuthMiddleware_ValidToken(t *testing.T) {
 	r := gin.New()
 
 	jwtSecret := "test-jwt-secret-key-2026"
+	r.Use(ErrorHandlerMiddleware(false))
 	r.Use(AdminAuthMiddleware(jwtSecret))
 
 	r.GET("/admin/test", func(c *gin.Context) {
@@ -70,6 +72,7 @@ func TestAdminAuthMiddleware_InvalidToken(t *testing.T) {
 	r := gin.New()
 
 	jwtSecret := "test-jwt-secret-key-2026"
+	r.Use(ErrorHandlerMiddleware(false))
 	r.Use(AdminAuthMiddleware(jwtSecret))
 
 	r.GET("/admin/test", func(c *gin.Context) {

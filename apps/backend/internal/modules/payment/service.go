@@ -67,7 +67,7 @@ func (s *paymentService) Checkout(ctx context.Context, sessionID string, ticketI
 
 	// 5. Simulate payment gateway
 	if simulateStatus == "fail" {
-		return nil, appErrors.New(http.StatusPaymentRequired, "PAYMENT_FAILED", "Payment processing simulated failure")
+		return nil, appErrors.New(http.StatusPaymentRequired, appErrors.ErrCodePaymentFailed, "Payment processing simulated failure")
 	}
 
 	// 6. Transition ticket status to Sold

@@ -22,4 +22,10 @@ const (
 	ErrCodeTicketUnavailable   = "TICKET_UNAVAILABLE"
 	ErrCodeNoActiveHold        = "NO_ACTIVE_HOLD"
 	ErrCodeReservationFailed   = "RESERVATION_FAILED"
+
+	// Payment specific error codes
+	ErrCodePaymentFailed = "PAYMENT_FAILED"
+
+	// Idempotency specific error codes
+	ErrCodeDuplicateRequest = "DUPLICATE_REQUEST"
 )
