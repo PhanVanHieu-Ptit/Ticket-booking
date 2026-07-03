@@ -13,6 +13,13 @@ export function useTicketAvailability() {
   const [isDegraded, setIsDegraded] = useState<boolean>(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  // Cached session token used to authenticate the SSE connection via a
+  // ?session_token= query param, since the session_token cookie alone isn't
+  // reliable cross-origin in private/incognito tabs (see connectSSE below).
+  const sessionTokenRef = useRef<string | null>(null);
+  // Holds the latest connectSSE closure so scheduleReconnect (defined before
+  // connectSSE, to break their mutual dependency) always retries with it.
+  const connectSSERef = useRef<() => void>(() => {});
   const reconnectTimeoutRef = useRef<any>(null);
   const reconnectDelayRef = useRef<number>(1000); // Initial reconnect delay (1s)
   const isTabActiveRef = useRef<boolean>(true);
@@ -59,14 +66,47 @@ export function useTicketAvailability() {
     setIsDegraded(false);
   }, []);
 
+  // Retry connectSSE with exponential backoff (cap at 30s), same policy used
+  // for a dropped EventSource connection and for a failed token fetch.
+  const scheduleReconnect = useCallback(() => {
+    if (!isTabActiveRef.current) return;
+
+    // Keep counts fresh via REST polling while the live stream is down
+    startPolling();
+
+    const delay = reconnectDelayRef.current;
+    reconnectDelayRef.current = Math.min(delay * 2, 30000);
+
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    reconnectTimeoutRef.current = setTimeout(() => {
+      connectSSERef.current();
+    }, delay);
+  }, [startPolling]);
+
   // Connect to SSE stream
-  const connectSSE = useCallback(() => {
+  const connectSSE = useCallback(async () => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
 
-    // Connect using EventSource. Browser includes cookies by default for same-origin (proxied) requests.
-    const url = apiUrl("/api/v1/tickets/availability/stream");
+    // Fetch (and cache) a session token to pass explicitly as a query param.
+    // withCredentials still sends the session_token cookie when the browser
+    // allows it, but private/incognito tabs block that cookie outright since
+    // frontend (Vercel) and backend (Render) are different origins — the
+    // query param is what keeps the stream authenticated in that case.
+    if (!sessionTokenRef.current) {
+      try {
+        sessionTokenRef.current = await bookingApi.getSessionToken();
+      } catch (err) {
+        console.error("Failed to fetch session token for SSE stream:", err);
+        scheduleReconnect();
+        return;
+      }
+    }
+
+    const url = apiUrl(
+      `/api/v1/tickets/availability/stream?session_token=${encodeURIComponent(sessionTokenRef.current)}`
+    );
     const es = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = es;
 
@@ -147,23 +187,14 @@ export function useTicketAvailability() {
       console.error("SSE connection error:", e);
       setIsConnected(false);
       es.close();
-
-      // Only attempt reconnect/poll if tab is active
-      if (isTabActiveRef.current) {
-        // Keep counts fresh via REST polling while the live stream is down
-        startPolling();
-
-        // Exponential backoff reconnection logic (cap at 30 seconds)
-        const delay = reconnectDelayRef.current;
-        reconnectDelayRef.current = Math.min(delay * 2, 30000);
-
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connectSSE();
-        }, delay);
-      }
+      // Drop the cached token: the error may be an expired/rejected session
+      // token (EventSource exposes no status code), so the next reconnect
+      // attempt should fetch a fresh one rather than retry the same one forever.
+      sessionTokenRef.current = null;
+      scheduleReconnect();
     };
-  }, [startPolling, stopPolling, fetchInitialAvailability]);
+  }, [scheduleReconnect, stopPolling, fetchInitialAvailability]);
+  connectSSERef.current = connectSSE;
 
   const disconnectSSE = useCallback(() => {
     if (eventSourceRef.current) {

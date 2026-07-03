@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -48,12 +49,45 @@ func Get() *slog.Logger {
 	return log
 }
 
+// sensitiveQueryParams lists query keys whose values must never reach the
+// logs verbatim, e.g. the admin JWT passed via ?token= for SSE connections
+// (EventSource cannot set an Authorization header).
+var sensitiveQueryParams = []string{"token"}
+
+// redactSensitiveQuery replaces the values of sensitiveQueryParams in a raw
+// query string with "REDACTED" before it is written to the logs.
+func redactSensitiveQuery(rawQuery string) string {
+	if rawQuery == "" {
+		return rawQuery
+	}
+
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		// Unparseable query string: redact wholesale rather than risk
+		// leaking a token embedded in a malformed value.
+		return "REDACTED"
+	}
+
+	redacted := false
+	for _, key := range sensitiveQueryParams {
+		if _, ok := values[key]; ok {
+			values.Set(key, "REDACTED")
+			redacted = true
+		}
+	}
+
+	if !redacted {
+		return rawQuery
+	}
+	return values.Encode()
+}
+
 // GinMiddleware returns a Gin middleware that logs HTTP requests using the structured logger.
 func GinMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
+		query := redactSensitiveQuery(c.Request.URL.RawQuery)
 
 		c.Next()
 

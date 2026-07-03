@@ -40,6 +40,23 @@ export interface AvailabilityResponse {
 }
 
 export const bookingApi = {
+  // Fetches the raw signed session token so it can be attached as
+  // ?session_token= on the EventSource URL. Cookies alone aren't reliable
+  // for that connection: private/incognito tabs block the cross-site
+  // session_token cookie (frontend on Vercel, backend on Render are
+  // different origins), so the token also needs to travel in the JSON body.
+  getSessionToken: async (): Promise<string> => {
+    const response = await fetch(apiUrl("/api/v1/sessions"), {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to initialize session");
+    }
+    const result: ApiResponse<{ session_token: string }> = await response.json();
+    return result.data.session_token;
+  },
+
   getAvailability: async (): Promise<TicketCategoryAvailability[]> => {
     const response = await fetch(apiUrl("/api/v1/tickets/availability"), {
       credentials: "include",
