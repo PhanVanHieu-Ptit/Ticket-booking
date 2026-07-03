@@ -292,9 +292,39 @@ export const CheckoutPage: React.FC = () => {
   if (loading) {
     return (
       <CheckoutLayout>
-        <div className="flex flex-col items-center justify-center py-20 space-y-4">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-neutral-400 font-medium animate-pulse">Loading secure checkout...</p>
+        <div className="grid gap-6 lg:gap-8 lg:grid-cols-3 items-start animate-pulse" aria-busy="true" aria-label="Loading secure checkout">
+          {/* Left Side: Form skeleton */}
+          <div className="lg:col-span-2 order-2 lg:order-1">
+            <div className="p-4 sm:p-6 md:p-8 rounded-3xl border border-white/5 glass-premium space-y-6">
+              <div className="flex justify-between items-center pb-4 border-b border-white/5">
+                <div className="h-6 w-40 bg-white/10 rounded" />
+                <div className="h-6 w-28 bg-white/10 rounded-full" />
+              </div>
+              <div className="space-y-5">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="h-4 w-32 bg-white/10 rounded" />
+                    <div className="h-12 w-full bg-white/5 rounded-xl" />
+                  </div>
+                ))}
+                <div className="h-14 w-full bg-white/10 rounded-xl" />
+                <div className="h-12 w-full bg-white/5 rounded-xl" />
+              </div>
+            </div>
+          </div>
+
+          {/* Right Side: Order summary skeleton */}
+          <div className="space-y-6 order-1 lg:order-2">
+            <div className="p-4 sm:p-6 rounded-3xl border border-white/5 glass space-y-4">
+              <div className="h-5 w-32 bg-white/10 rounded" />
+              <div className="h-4 w-full bg-white/5 rounded" />
+              <div className="h-4 w-2/3 bg-white/5 rounded" />
+              <div className="border-t border-white/5 pt-4">
+                <div className="h-6 w-full bg-white/10 rounded" />
+              </div>
+            </div>
+            <div className="h-14 w-full rounded-2xl border border-white/5 bg-white/5" />
+          </div>
         </div>
       </CheckoutLayout>
     );
@@ -361,10 +391,11 @@ export const CheckoutPage: React.FC = () => {
               )}
 
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-neutral-300">Email Address</label>
+                <label htmlFor="checkout-email" className="block text-sm font-semibold text-neutral-300">Email Address</label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
                   <input
+                    id="checkout-email"
                     type="email"
                     value={email}
                     onChange={(e) => { setEmail(e.target.value); setValidationError(null); setCheckoutError(null); }}
@@ -377,10 +408,11 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-neutral-300">Cardholder Name</label>
+                <label htmlFor="checkout-card-name" className="block text-sm font-semibold text-neutral-300">Cardholder Name</label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
                   <input
+                    id="checkout-card-name"
                     type="text"
                     value={cardName}
                     onChange={(e) => { setCardName(e.target.value); setValidationError(null); setCheckoutError(null); }}
@@ -393,10 +425,11 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-neutral-300">Card Number</label>
+                <label htmlFor="checkout-card-number" className="block text-sm font-semibold text-neutral-300">Card Number</label>
                 <div className="relative">
                   <CreditCard className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
                   <input
+                    id="checkout-card-number"
                     type="text"
                     value={cardNumber}
                     onChange={handleCardNumberChange}
@@ -410,8 +443,9 @@ export const CheckoutPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-neutral-300">Expiration Date</label>
+                  <label htmlFor="checkout-card-expiry" className="block text-sm font-semibold text-neutral-300">Expiration Date</label>
                   <input
+                    id="checkout-card-expiry"
                     type="text"
                     value={cardExpiry}
                     onChange={handleExpiryChange}
@@ -422,8 +456,9 @@ export const CheckoutPage: React.FC = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-neutral-300">CVV</label>
+                  <label htmlFor="checkout-card-cvv" className="block text-sm font-semibold text-neutral-300">CVV</label>
                   <input
+                    id="checkout-card-cvv"
                     type="password"
                     value={cardCvv}
                     onChange={handleCvvChange}
@@ -436,8 +471,9 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-neutral-300">Simulation Status (Testing)</label>
+                <label htmlFor="checkout-simulate-status" className="block text-sm font-semibold text-neutral-300">Simulation Status (Testing)</label>
                 <select
+                  id="checkout-simulate-status"
                   value={simulateStatus}
                   onChange={(e) => setSimulateStatus(e.target.value as "success" | "fail")}
                   disabled={expired || isProcessing}
@@ -493,7 +529,7 @@ export const CheckoutPage: React.FC = () => {
             </div>
 
             {holdDetails?.ticket_code && (
-              <div className="text-xs text-neutral-500 flex justify-between">
+              <div className="text-xs text-neutral-400 flex justify-between">
                 <span>Ticket Code</span>
                 <span className="font-mono text-neutral-400">{holdDetails.ticket_code}</span>
               </div>
@@ -501,7 +537,7 @@ export const CheckoutPage: React.FC = () => {
 
             <div className="border-t border-white/5 pt-4 flex justify-between font-bold text-lg">
               <span>Total</span>
-              <span className="text-primary">${price.toFixed(2)}</span>
+              <span className="text-purple-400">${price.toFixed(2)}</span>
             </div>
           </div>
 
