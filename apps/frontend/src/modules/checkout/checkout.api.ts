@@ -1,4 +1,5 @@
 import { apiUrl } from "../../lib/apiBase";
+import { ensureSessionToken } from "../../lib/sessionToken";
 
 export interface CheckoutPayload {
   ticketId: number;
@@ -28,6 +29,11 @@ export interface ApiResponse<T> {
 
 export const checkoutApi = {
   checkout: async (payload: CheckoutPayload, idempotencyKey: string): Promise<CheckoutResult> => {
+    // Must resolve to the same session as the preceding reserve/hold calls
+    // (see lib/sessionToken.ts) or the backend won't find the ticket held
+    // under that session.
+    const sessionToken = await ensureSessionToken();
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -38,6 +44,7 @@ export const checkoutApi = {
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": idempotencyKey,
+          "X-Session-Token": sessionToken,
         },
         body: JSON.stringify({
           ticket_id: payload.ticketId,
