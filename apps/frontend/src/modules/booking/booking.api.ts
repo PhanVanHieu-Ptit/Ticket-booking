@@ -1,4 +1,5 @@
 import { apiUrl } from "../../lib/apiBase";
+import { ensureSessionToken } from "../../lib/sessionToken";
 
 export interface TicketCategoryAvailability {
   name: string;
@@ -69,6 +70,12 @@ export const bookingApi = {
   },
 
   reserveTicket: async (category: string): Promise<ReservationDetails> => {
+    // Reserve, the follow-up hold lookup on /checkout, and the final
+    // checkout call must all resolve to the same session. Relying on the
+    // cookie alone breaks that in private/incognito tabs (see
+    // lib/sessionToken.ts), so the cached token also travels as a header.
+    const sessionToken = await ensureSessionToken();
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -78,6 +85,7 @@ export const bookingApi = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Session-Token": sessionToken,
         },
         body: JSON.stringify({ category }),
         signal: controller.signal,
@@ -106,7 +114,11 @@ export const bookingApi = {
   },
 
   getActiveHold: async (): Promise<ReservationDetails> => {
+    const sessionToken = await ensureSessionToken();
     const response = await fetch(apiUrl("/api/v1/tickets/hold"), {
+      headers: {
+        "X-Session-Token": sessionToken,
+      },
       credentials: "include",
     });
     if (!response.ok) {
@@ -120,8 +132,12 @@ export const bookingApi = {
   },
 
   cancelHold: async (): Promise<void> => {
+    const sessionToken = await ensureSessionToken();
     const response = await fetch(apiUrl("/api/v1/tickets/hold/cancel"), {
       method: "POST",
+      headers: {
+        "X-Session-Token": sessionToken,
+      },
       credentials: "include",
     });
     if (!response.ok) {

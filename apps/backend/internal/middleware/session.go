@@ -21,16 +21,25 @@ func SessionMiddleware(jwtSecret string, isProd bool, crossSite bool) gin.Handle
 		var tokenStr string
 		var needsNewCookie bool
 
-		// 1. Try to read the cookie
-		cookieVal, err := c.Cookie("session_token")
-		if err == nil && cookieVal != "" {
+		// 1. Try to read the cookie, falling back to the X-Session-Token
+		// header. Private/incognito tabs block the cross-site session_token
+		// cookie outright (frontend on Vercel, backend on Render are
+		// different origins), so callers that cached a token from
+		// POST /api/v1/sessions send it back explicitly via this header --
+		// same fallback StreamAvailability already uses via a query param.
+		candidate, err := c.Cookie("session_token")
+		if err != nil || candidate == "" {
+			candidate = c.GetHeader("X-Session-Token")
+		}
+
+		if candidate != "" {
 			// 2. Parse and verify
-			sessionID, expiresAt, err = session.VerifySessionToken(cookieVal, []byte(jwtSecret))
+			sessionID, expiresAt, err = session.VerifySessionToken(candidate, []byte(jwtSecret))
 			if err != nil {
-				logger.Warn("Invalid or expired session token cookie", "error", err)
+				logger.Warn("Invalid or expired session token", "error", err)
 				needsNewCookie = true
 			} else {
-				tokenStr = cookieVal
+				tokenStr = candidate
 			}
 		} else {
 			needsNewCookie = true
