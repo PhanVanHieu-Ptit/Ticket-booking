@@ -143,6 +143,7 @@ This is an npm-workspaces monorepo — there is no top-level `src/`/`app/` (Next
 - Node.js v18+ and npm v10+
 - Go 1.25+
 - Docker & Docker Compose
+- [k6](https://k6.io) (optional — only needed to run the load tests in [§7](#7-available-commands))
 
 ### Installation
 
@@ -201,10 +202,40 @@ Full walkthrough (including PgBouncer/Redis details and Lighthouse testing notes
 | `npm run test:backend:race` | Runs the Go backend test suite with the data race detector |
 | `npm run test:e2e` | Runs Playwright end-to-end tests |
 | `npm run test:e2e:ci` | Runs Playwright tests with CI reporters |
+| `npm run loadtest:reserve` | Runs the k6 concurrency test against a single ticket category ([`apps/backend/loadtest/reserve_race.js`](apps/backend/loadtest/reserve_race.js)) |
+| `npm run loadtest:reserve:all` | Runs the k6 concurrency test against both categories at once ([`apps/backend/loadtest/reserve_race_all.js`](apps/backend/loadtest/reserve_race_all.js)) |
 
 Database migrations/seeding also have `Makefile` shortcuts: `make migrate-up`, `make migrate-down`, `make seed`, `make db-reset`, `make test`.
 
 > Most backend tests are integration-style and hit real Postgres/Redis (`npm run infra:up` first); they call `t.Skip` automatically if that infra isn't reachable, so `npm run test:backend` is still safe to run without it — you'll just skip the DB/Redis-backed cases.
+
+### Load Testing (k6) — proving zero overselling
+
+Both scripts live in [`apps/backend/loadtest/`](apps/backend/loadtest/). Each fires one `POST /api/v1/tickets/reserve` per virtual user (no shared cookies, so every VU is a distinct anonymous buyer session), then the resulting ticket rows are checked directly in Postgres — not just k6's own counters.
+
+```bash
+npm run infra:up && npm run dev:backend   # backend must be running on :8080
+
+# Single category, stock collapsed to N via the test-only reset endpoint
+# (only mounted when APP_ENV != production):
+curl -X POST http://localhost:8080/api/v1/test/reset-inventory \
+  -H "Content-Type: application/json" -d '{"category":"VIP","available":10}'
+BASE_URL=http://localhost:8080 CATEGORY=VIP VUS=500 npm run loadtest:reserve
+
+# Both categories at once, against real seeded stock (100 VIP + 400 Standard):
+BASE_URL=http://localhost:8080 VIP_VUS=1000 STANDARD_VUS=4000 npm run loadtest:reserve:all
+```
+
+Actual runs performed on 2026-07-03 (local dev, Postgres + Redis via Docker):
+
+| Run | VUs | Stock | Successes (201) | Sold-out (409) | Unexpected errors | DB-verified `Holding`/`Sold` count |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 500 | VIP, collapsed to 10 | 10 | 490 | 0 | 10 |
+| 2 | 5,000 | VIP, collapsed to 10 | 10 | 4,990 | 0 | 10 |
+| 3 | 5,000 | Standard, real stock (400) | 400 | 4,600 | 0 | 400 |
+| 4 | 5,000 total (1,000 VIP + 4,000 Standard) | Both categories, real stock (100 + 400 = 500) | 500 (100 VIP + 400 Standard) | 4,500 | 0 | 500 (100 VIP + 400 Standard) |
+
+In every run, successes matched available stock exactly, verified independently against Postgres row counts — no overselling under concurrency, including the project's stated target load of 5,000 concurrent users against the full 500-ticket inventory (run 4).
 
 ---
 

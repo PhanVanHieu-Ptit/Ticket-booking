@@ -27,7 +27,9 @@
     "test:backend": "cd apps/backend && go test ./...",
     "test:backend:race": "cd apps/backend && go test ./... -race",
     "test:e2e": "playwright test",
-    "test:e2e:ci": "playwright test --reporter=list,html"
+    "test:e2e:ci": "playwright test --reporter=list,html",
+    "loadtest:reserve": "k6 run apps/backend/loadtest/reserve_race.js",
+    "loadtest:reserve:all": "k6 run apps/backend/loadtest/reserve_race_all.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.6.0",

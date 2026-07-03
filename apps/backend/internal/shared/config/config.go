@@ -70,6 +70,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}
 
+	// In production, an empty CORS_ALLOWED_ORIGINS makes the CORS middleware
+	// mirror back any request Origin alongside Allow-Credentials: true,
+	// which is equivalent to a wildcard-with-credentials misconfiguration.
+	// Fail fast instead of silently allowing any origin.
+	if c.IsProduction() && len(c.CORSAllowedOrigins) == 0 {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS must be set when APP_ENV=production")
+	}
+
 	return nil
 }
 

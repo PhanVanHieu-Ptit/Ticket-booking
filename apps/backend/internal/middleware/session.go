@@ -18,6 +18,7 @@ func SessionMiddleware(jwtSecret string, isProd bool, crossSite bool) gin.Handle
 	return func(c *gin.Context) {
 		var sessionID string
 		var expiresAt time.Time
+		var tokenStr string
 		var needsNewCookie bool
 
 		// 1. Try to read the cookie
@@ -28,6 +29,8 @@ func SessionMiddleware(jwtSecret string, isProd bool, crossSite bool) gin.Handle
 			if err != nil {
 				logger.Warn("Invalid or expired session token cookie", "error", err)
 				needsNewCookie = true
+			} else {
+				tokenStr = cookieVal
 			}
 		} else {
 			needsNewCookie = true
@@ -36,7 +39,8 @@ func SessionMiddleware(jwtSecret string, isProd bool, crossSite bool) gin.Handle
 		// 3. Generate new session if needed
 		if needsNewCookie {
 			sessionID = "sess_" + uuid.New().String()
-			tokenStr, exp, err := session.SignSessionToken(sessionID, []byte(jwtSecret))
+			var exp time.Time
+			tokenStr, exp, err = session.SignSessionToken(sessionID, []byte(jwtSecret))
 			if err != nil {
 				logger.Error("Failed to generate signed session token", "error", err)
 				c.Error(apperrors.NewInternal(err, "An unexpected error occurred during session initialization"))
@@ -56,9 +60,15 @@ func SessionMiddleware(jwtSecret string, isProd bool, crossSite bool) gin.Handle
 			}
 		}
 
-		// 4. Inject into context
+		// 4. Inject into context. session_token is exposed (not just set as a
+		// cookie) so callers like /api/v1/sessions can hand it back in the
+		// response body: browsers that block third-party cookies (e.g.
+		// private/incognito tabs, when frontend and backend are on different
+		// origins) never store the cookie, so EventSource connections must be
+		// able to authenticate via an explicit ?session_token= query param instead.
 		c.Set("session_id", sessionID)
 		c.Set("session_expires_at", expiresAt)
+		c.Set("session_token", tokenStr)
 
 		c.Next()
 	}
