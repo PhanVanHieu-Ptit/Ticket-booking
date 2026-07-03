@@ -24,7 +24,7 @@ async function reserveButtonForFirstCard(page: Page) {
   const card = page
     .getByText('Inventory Remaining', { exact: true })
     .first()
-    .locator('xpath=ancestor::div[.//h3][1]');
+    .locator('xpath=ancestor::div[.//h2][1]');
   return card.getByRole('button');
 }
 

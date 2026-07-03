@@ -11,7 +11,7 @@ const STARTING_INVENTORY = 8; // just needs to be > 1 so a single hold never sel
 
 /** Locates the first ticket category card on the page (always VIP, see REALTIME_CATEGORY above). */
 function firstCategoryCard(page: Page) {
-  return page.getByText('Inventory Remaining', { exact: true }).first().locator('xpath=ancestor::div[.//h3][1]');
+  return page.getByText('Inventory Remaining', { exact: true }).first().locator('xpath=ancestor::div[.//h2][1]');
 }
 
 /** Opens a fresh independent browser session (own cookies/session) on the event page. */
@@ -96,9 +96,13 @@ test.describe.serial('ticket availability updates live without a page reload', (
     const pageA = await contextA.newPage();
 
     // Block the stream before page A's first connection attempt, so it fails
-    // immediately and falls into the degraded/reconnect path.
+    // immediately and falls into the degraded/reconnect path. The trailing
+    // "**" is required: connectSSE() now authenticates the stream via a
+    // "?session_token=..." query param (see useTicketAvailability.ts), and a
+    // glob with no wildcard after "stream" does not match a URL that has a
+    // query string appended.
     let streamBlocked = true;
-    await pageA.route('**/tickets/availability/stream', (route) => {
+    await pageA.route('**/tickets/availability/stream**', (route) => {
       if (streamBlocked) {
         route.abort();
       } else {
