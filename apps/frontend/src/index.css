@@ -117,3 +117,9 @@
 .glow-active {
   animation: pulse-glow 3s infinite ease-in-out;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .glow-active {
+    animation: none;
+  }
+}

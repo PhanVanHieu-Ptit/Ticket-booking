@@ -72,7 +72,7 @@ export const ConfirmationPage: React.FC = () => {
               </div>
               <div className="text-right">
                 <p className="text-xs text-neutral-400">Amount Paid</p>
-                <p className="font-bold text-primary flex items-center justify-end">
+                <p className="font-bold text-purple-400 flex items-center justify-end">
                   <DollarSign className="w-3.5 h-3.5" />
                   {orderResult.amount.toFixed(2)}
                 </p>

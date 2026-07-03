@@ -14,8 +14,28 @@ export default defineConfig({
       '@': resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          vendor: ['lucide-react', 'clsx', 'tailwind-merge'],
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
+  preview: {
+    port: 4173,
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

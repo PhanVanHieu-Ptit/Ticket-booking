@@ -29,6 +29,7 @@ function Layout() {
         <nav className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate('/')}
+            aria-label="Go to Concert & Booking page"
             className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 min-h-11 min-w-11 rounded-lg text-sm font-medium transition-all ${
               activeTab === 'home'
                 ? 'bg-primary text-white shadow-lg shadow-primary/20'
@@ -40,6 +41,7 @@ function Layout() {
           </button>
           <button
             onClick={() => navigate('/admin')}
+            aria-label="Go to Admin Dashboard page"
             className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 min-h-11 min-w-11 rounded-lg text-sm font-medium transition-all ${
               activeTab === 'admin'
                 ? 'bg-primary text-white shadow-lg shadow-primary/20'

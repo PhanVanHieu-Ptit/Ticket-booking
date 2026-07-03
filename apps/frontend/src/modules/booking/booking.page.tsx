@@ -183,7 +183,7 @@ export const BookingPage: React.FC = () => {
       ) : error && categories.length === 0 ? (
         <div className="p-8 text-center rounded-2xl border border-red-500/20 bg-red-950/10 text-red-400">
           <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-500 animate-bounce" />
-          <h4 className="font-bold text-lg">Error loading availability</h4>
+          <h2 className="font-bold text-lg">Error loading availability</h2>
           <p className="text-sm text-neutral-400 mt-2">{error}</p>
           <button 
             onClick={() => window.location.reload()}
