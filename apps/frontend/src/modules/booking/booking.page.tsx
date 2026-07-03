@@ -74,9 +74,10 @@ export const BookingPage: React.FC = () => {
             <ShieldAlert className="w-5 h-5 text-primary" />
             <span>{cancellationMessage}</span>
           </div>
-          <button 
+          <button
             onClick={() => setCancellationMessage(null)}
-            className="text-neutral-400 hover:text-white transition-colors text-lg font-bold px-1"
+            aria-label="Dismiss message"
+            className="shrink-0 flex items-center justify-center min-w-11 min-h-11 rounded-lg text-neutral-400 hover:text-white hover:bg-white/5 transition-colors text-lg font-bold"
           >
             ×
           </button>
@@ -84,7 +85,7 @@ export const BookingPage: React.FC = () => {
       )}
 
       {/* Hero Section */}
-      <div className="relative overflow-hidden rounded-3xl glass-premium p-8 md:p-12 flex flex-col md:flex-row gap-8 items-center justify-between">
+      <div className="relative overflow-hidden rounded-3xl glass-premium p-6 sm:p-8 md:p-12 flex flex-col md:flex-row gap-8 items-center justify-between">
         <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl -z-10" />
         <div className="space-y-4 max-w-xl text-center md:text-left">
           <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start">
@@ -104,7 +105,7 @@ export const BookingPage: React.FC = () => {
               {isConnected ? 'Syncing Live' : isDegraded ? 'Slow Mode · Polling' : 'Reconnecting...'}
             </span>
           </div>
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight leading-tight">
             Neon Symphony: <br />
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-400">
               Hyperion Tour 2026
@@ -127,27 +128,27 @@ export const BookingPage: React.FC = () => {
         </div>
 
         {/* Countdown / Timer Card Mockup */}
-        <div className="w-full md:w-auto min-w-[280px] glass p-6 rounded-2xl border border-white/10 flex flex-col items-center justify-center space-y-4 text-center">
+        <div className="w-full md:w-auto md:min-w-[280px] glass p-4 sm:p-6 rounded-2xl border border-white/10 flex flex-col items-center justify-center space-y-4 text-center">
           <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider">
             Ticket Sale Begins In
           </span>
-          <div className="flex gap-3">
+          <div className="flex gap-2 sm:gap-3">
             <div className="flex flex-col">
-              <span className="text-3xl font-extrabold font-mono bg-white/5 px-3 py-2 rounded-lg border border-white/5">
+              <span className="text-2xl sm:text-3xl font-extrabold font-mono bg-white/5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-white/5">
                 00
               </span>
               <span className="text-[10px] font-semibold text-neutral-500 mt-1">HOURS</span>
             </div>
-            <span className="text-2xl font-bold self-center text-primary">:</span>
+            <span className="text-xl sm:text-2xl font-bold self-center text-primary">:</span>
             <div className="flex flex-col">
-              <span className="text-3xl font-extrabold font-mono bg-white/5 px-3 py-2 rounded-lg border border-white/5">
+              <span className="text-2xl sm:text-3xl font-extrabold font-mono bg-white/5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-white/5">
                 04
               </span>
               <span className="text-[10px] font-semibold text-neutral-500 mt-1">MINUTES</span>
             </div>
-            <span className="text-2xl font-bold self-center text-primary">:</span>
+            <span className="text-xl sm:text-2xl font-bold self-center text-primary">:</span>
             <div className="flex flex-col">
-              <span className="text-3xl font-extrabold font-mono bg-white/5 px-3 py-2 rounded-lg border border-white/5">
+              <span className="text-2xl sm:text-3xl font-extrabold font-mono bg-white/5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-white/5">
                 59
               </span>
               <span className="text-[10px] font-semibold text-neutral-500 mt-1">SECONDS</span>

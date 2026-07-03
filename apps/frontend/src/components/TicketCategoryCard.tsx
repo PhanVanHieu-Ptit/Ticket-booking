@@ -39,13 +39,13 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = React.memo(
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl glass p-6 border transition group flex flex-col justify-between space-y-6 ${cardBorderClass}`}
+      className={`relative overflow-hidden rounded-2xl glass p-4 sm:p-6 border transition group flex flex-col justify-between space-y-6 ${cardBorderClass}`}
     >
       {isVip && (
         <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-2xl pointer-events-none" />
       )}
       <div className="space-y-3">
-        <div className="flex justify-between items-start">
+        <div className="flex flex-wrap justify-between items-start gap-2">
           <div>
             <span
               className={`text-xs font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${badgeClass}`}

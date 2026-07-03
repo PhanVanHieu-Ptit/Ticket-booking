@@ -77,7 +77,7 @@ export const AdminPage: React.FC = () => {
     return (
       <AdminLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
-          <div className="w-full max-w-md p-8 rounded-2xl border border-white/10 bg-zinc-900/60 backdrop-blur-xl space-y-6 shadow-2xl">
+          <div className="w-full max-w-md p-6 sm:p-8 rounded-2xl border border-white/10 bg-zinc-900/60 backdrop-blur-xl space-y-6 shadow-2xl">
             <div className="flex flex-col items-center text-center space-y-2">
               <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary">
                 <Lock className="w-6 h-6" />
@@ -157,7 +157,7 @@ export const AdminPage: React.FC = () => {
 
         {/* Analytics Grid */}
         <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
+          <div className="p-4 sm:p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Total Tickets Sold</div>
             <div className="text-4xl font-extrabold mt-2 text-white">
               {metrics ? metrics.totalTicketsSold : 0}
@@ -167,7 +167,7 @@ export const AdminPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
+          <div className="p-4 sm:p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Total Revenue</div>
             <div className="text-4xl font-extrabold mt-2 text-emerald-400">
               ${metrics ? metrics.totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}
@@ -177,7 +177,7 @@ export const AdminPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
+          <div className="p-4 sm:p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Active Holds</div>
             <div className="text-4xl font-extrabold mt-2 text-amber-400">
               {activeHoldsCount}
@@ -187,7 +187,7 @@ export const AdminPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
+          <div className="p-4 sm:p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Available Inventory</div>
             <div className="text-4xl font-extrabold mt-2 text-blue-400">
               {metrics ? Object.values(metrics.availableInventory).reduce((sum, n) => sum + n, 0) : 0}
@@ -205,7 +205,7 @@ export const AdminPage: React.FC = () => {
         <section className="grid gap-6 md:grid-cols-2">
           {metrics &&
             Object.keys(metrics.availableInventory).map((category) => (
-              <div key={category} className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/10 space-y-4">
+              <div key={category} className="p-4 sm:p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/10 space-y-4">
                 <h3 className="text-base font-bold text-white flex items-center justify-between">
                   <span>{category} Category Inventory</span>
                 </h3>
@@ -228,7 +228,7 @@ export const AdminPage: React.FC = () => {
         </section>
 
         {/* Holds List Table */}
-        <section className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/10 space-y-4">
+        <section className="p-4 sm:p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/10 space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold text-white">Live Reservations Queue</h3>
             <span className="px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-xs font-medium">
@@ -236,7 +236,46 @@ export const AdminPage: React.FC = () => {
             </span>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-zinc-800/80 bg-zinc-950/20">
+          {/* Mobile Card List (below md) */}
+          <div className="md:hidden space-y-3">
+            {holds.length === 0 ? (
+              <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/20 py-8 px-4 text-center text-zinc-500 text-sm">
+                No active reservation holds found.
+              </div>
+            ) : (
+              holds.map((hold) => (
+                <div
+                  key={hold.ticketId}
+                  className="rounded-xl border border-zinc-800/80 bg-zinc-950/20 p-4 space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs text-zinc-500">#{hold.ticketId}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-xs font-semibold ${
+                        hold.category === "VIP"
+                          ? "bg-purple-500/10 border border-purple-500/20 text-purple-400"
+                          : "bg-blue-500/10 border border-blue-500/20 text-blue-400"
+                      }`}
+                    >
+                      {hold.category}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-white text-sm">{hold.ticketCode}</span>
+                    <span className="font-mono font-bold text-amber-500 text-sm shrink-0">
+                      {formatDuration(hold.secondsRemaining)}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-zinc-900/60">
+                    <p className="text-[10px] uppercase tracking-wider text-zinc-500 mb-0.5">Session ID</p>
+                    <p className="font-mono text-xs text-zinc-400 break-all">{hold.sessionId}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-zinc-800/80 bg-zinc-950/20">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-zinc-800/80 text-zinc-400 text-xs uppercase tracking-wider">

@@ -48,7 +48,7 @@ export const ConfirmationPage: React.FC = () => {
         </div>
 
         {/* Order Receipt Details */}
-        <div className="p-6 md:p-8 rounded-3xl border border-white/5 glass-premium space-y-6 shadow-2xl">
+        <div className="p-4 sm:p-6 md:p-8 rounded-3xl border border-white/5 glass-premium space-y-6 shadow-2xl">
           <div className="flex justify-between items-center pb-4 border-b border-white/5">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-primary" /> Order Receipt
@@ -60,7 +60,7 @@ export const ConfirmationPage: React.FC = () => {
 
           <div className="space-y-4 text-sm">
             {/* Ticket Details */}
-            <div className="flex items-start justify-between">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-neutral-950/60 rounded-xl border border-white/5">
                   <Ticket className="w-4 h-4 text-neutral-400" />
