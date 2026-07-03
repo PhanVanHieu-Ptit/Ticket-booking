@@ -9,6 +9,7 @@ import (
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	appErrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/holdtimer"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -102,15 +103,13 @@ func (s *paymentService) Checkout(ctx context.Context, sessionID string, ticketI
 	if err != nil {
 		return nil, appErrors.NewInternal(err, "Failed to commit checkout transaction")
 	}
+	holdtimer.Clear(ticketID)
 
-	// 9. Update Redis Concurrency Shield
-	pipe := s.rdb.Pipeline()
-	pipe.Del(ctx, "hold:"+sessionID)
-	pipe.SAdd(ctx, "purchased:sessions", sessionID)
-	_, redisErr := pipe.Exec(ctx)
-	if redisErr != nil {
-		logger.Error("Failed to update Redis shield on successful checkout", "error", redisErr, "session_id", sessionID)
-	}
+	// 9. Update Redis Concurrency Shield. Retry briefly on failure: a stale
+	// "hold:{sessionID}" key left behind by a failed/delayed update can make a
+	// later reserve attempt see a false ACTIVE_HOLD_EXISTS for a ticket that
+	// Postgres already recorded as Sold.
+	s.updateRedisShieldWithRetry(ctx, sessionID)
 
 	// 10. Broadcast updated available count via SSE
 	if available, err := s.rdb.SCard(ctx, "tickets:available:"+ticket.Category).Result(); err == nil {
@@ -118,4 +117,27 @@ func (s *paymentService) Checkout(ctx context.Context, sessionID string, ticketI
 	}
 
 	return order, nil
+}
+
+// updateRedisShieldWithRetry clears the session's Redis hold key and marks it
+// as purchased, retrying briefly on failure. Postgres is already the source
+// of truth by this point; this only shrinks the window in which a stale
+// "hold:{sessionID}" key could survive past the Postgres commit.
+func (s *paymentService) updateRedisShieldWithRetry(ctx context.Context, sessionID string) {
+	backoffs := []time.Duration{0, 50 * time.Millisecond, 150 * time.Millisecond}
+	var lastErr error
+	for _, delay := range backoffs {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		pipe := s.rdb.Pipeline()
+		pipe.Del(ctx, "hold:"+sessionID)
+		pipe.SAdd(ctx, "purchased:sessions", sessionID)
+		if _, err := pipe.Exec(ctx); err != nil {
+			lastErr = err
+			continue
+		}
+		return
+	}
+	logger.Error("Failed to update Redis shield on successful checkout after retries", "error", lastErr, "session_id", sessionID)
 }

@@ -3,23 +3,26 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/middleware"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/session"
+	appDB "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/db"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/gin-gonic/gin"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/redis/go-redis/v9"
 )
 
 func TestGetAvailability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// Set up Redis client on db 1 for test isolation
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 		DB:   1,
@@ -31,17 +34,50 @@ func TestGetAvailability(t *testing.T) {
 	}
 	defer rdb.Close()
 
-	// Clear previous keys
-	rdb.Del(ctx, "tickets:available:VIP", "tickets:available:Standard")
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:postgres@localhost:5432/ticket_booking?sslmode=disable"
+	}
+	dbConn, err := appDB.Init(dbURL)
+	if err != nil {
+		t.Skipf("PostgreSQL connection failed, skipping integration test: %v", err)
+		return
+	}
+	defer appDB.Close()
 
-	// Set up mock inventory
-	rdb.SAdd(ctx, "tickets:available:VIP", 1, 2, 3)
-	rdb.SAdd(ctx, "tickets:available:Standard", 101, 102)
+	// Use a category name that cannot collide with any pre-existing seed data
+	// (e.g. VIP/Standard) so this test proves categories are derived
+	// dynamically from the tickets table, not hardcoded in Go.
+	const testCategory = "AvailTestCat"
+	const testPrice = 75.0
+	redisKey := "tickets:available:" + testCategory
+
+	cleanup := func() {
+		rdb.Del(ctx, redisKey)
+		_, _ = dbConn.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_code LIKE 'TKT-AVAIL-TEST-%'")
+	}
+	cleanup()
+	defer cleanup()
+
+	// Insert 3 tickets in the new category; only 2 will be marked available
+	// in Redis so we can assert available (2) independently from total (3).
+	var ticketIDs [3]int64
+	for i := 0; i < 3; i++ {
+		err := dbConn.QueryRowContext(ctx, `
+			INSERT INTO tickets (ticket_code, category, price, status)
+			VALUES ($1, $2, $3, 'Available')
+			RETURNING id
+		`, fmt.Sprintf("TKT-AVAIL-TEST-%03d", i+1), testCategory, testPrice).Scan(&ticketIDs[i])
+		if err != nil {
+			t.Fatalf("failed to insert test ticket %d: %v", i, err)
+		}
+	}
+	rdb.SAdd(ctx, redisKey, ticketIDs[0], ticketIDs[1])
 
 	broker := sse.NewBroker()
 	broker.Start()
 
-	handler := NewAvailabilityHandler(nil, rdb, broker, []byte("test-secret"))
+	handler := NewAvailabilityHandler(dbConn, rdb, broker, []byte("test-secret"))
 
 	r := gin.New()
 	r.Use(middleware.ErrorHandlerMiddleware(false))
@@ -78,20 +114,34 @@ func TestGetAvailability(t *testing.T) {
 		t.Error("expected response.success to be true")
 	}
 
-	if len(resp.Data.Categories) != 2 {
-		t.Fatalf("expected 2 categories, got %d", len(resp.Data.Categories))
+	var found *struct {
+		Name      string  `json:"name"`
+		Price     float64 `json:"price"`
+		Available int     `json:"available"`
+		Total     int     `json:"total"`
+		Status    string  `json:"status"`
+	}
+	for i := range resp.Data.Categories {
+		if resp.Data.Categories[i].Name == testCategory {
+			found = &resp.Data.Categories[i]
+			break
+		}
 	}
 
-	// Verify VIP category
-	vip := resp.Data.Categories[0]
-	if vip.Name != "VIP" || vip.Available != 3 || vip.Status != "Available" {
-		t.Errorf("unexpected VIP details: %+v", vip)
+	if found == nil {
+		t.Fatalf("expected category %q to be present in dynamically-derived response, got: %+v", testCategory, resp.Data.Categories)
 	}
-
-	// Verify Standard category
-	std := resp.Data.Categories[1]
-	if std.Name != "Standard" || std.Available != 2 || std.Status != "Available" {
-		t.Errorf("unexpected Standard details: %+v", std)
+	if found.Price != testPrice {
+		t.Errorf("expected price %v, got %v", testPrice, found.Price)
+	}
+	if found.Total != 3 {
+		t.Errorf("expected total 3, got %d", found.Total)
+	}
+	if found.Available != 2 {
+		t.Errorf("expected available 2, got %d", found.Available)
+	}
+	if found.Status != "Available" {
+		t.Errorf("expected status Available, got %s", found.Status)
 	}
 }
 
@@ -148,16 +198,47 @@ func TestStreamAvailability_Success(t *testing.T) {
 	}
 	defer rdb.Close()
 
-	rdb.Del(ctx, "tickets:available:VIP", "tickets:available:Standard")
-	rdb.SAdd(ctx, "tickets:available:VIP", 1, 2)
-	rdb.SAdd(ctx, "tickets:available:Standard", 101)
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgresql://postgres:postgres@localhost:5432/ticket_booking?sslmode=disable"
+	}
+	dbConn, err := appDB.Init(dbURL)
+	if err != nil {
+		t.Skipf("PostgreSQL connection failed, skipping integration test: %v", err)
+		return
+	}
+	defer appDB.Close()
+
+	// Same rationale as TestGetAvailability: use a category name that can't
+	// collide with pre-existing seed data, proving the SSE initial_state
+	// payload is built dynamically rather than hardcoded to VIP/Standard.
+	const testCategory = "StreamTestCat"
+	redisKey := "tickets:available:" + testCategory
+
+	cleanup := func() {
+		rdb.Del(ctx, redisKey)
+		_, _ = dbConn.ExecContext(ctx, "DELETE FROM tickets WHERE ticket_code LIKE 'TKT-STREAM-TEST-%'")
+	}
+	cleanup()
+	defer cleanup()
+
+	var ticketID int64
+	err = dbConn.QueryRowContext(ctx, `
+		INSERT INTO tickets (ticket_code, category, price, status)
+		VALUES ('TKT-STREAM-TEST-001', $1, 60.0, 'Available')
+		RETURNING id
+	`, testCategory).Scan(&ticketID)
+	if err != nil {
+		t.Fatalf("failed to insert test ticket: %v", err)
+	}
+	rdb.SAdd(ctx, redisKey, ticketID)
 
 	broker := sse.NewBroker()
 	broker.Start()
 	sse.GlobalBroker = broker
 
 	jwtSecret := []byte("test-jwt-secret-key-2026")
-	handler := NewAvailabilityHandler(nil, rdb, broker, jwtSecret)
+	handler := NewAvailabilityHandler(dbConn, rdb, broker, jwtSecret)
 
 	r := gin.New()
 	r.GET("/api/v1/tickets/availability/stream", handler.StreamAvailability)
@@ -205,8 +286,9 @@ func TestStreamAvailability_Success(t *testing.T) {
 		t.Error("expected stream body to contain initial_state event")
 	}
 
-	if !strings.Contains(body, `{"Standard":{"available":1,"status":"Available"},"VIP":{"available":2,"status":"Available"}}`) {
-		t.Errorf("expected stream body to contain initial ticket counts, got: %s", body)
+	expectedFragment := fmt.Sprintf(`"%s":{"available":1,"status":"Available"}`, testCategory)
+	if !strings.Contains(body, expectedFragment) {
+		t.Errorf("expected stream body to contain dynamically-derived category %q, got: %s", testCategory, body)
 	}
 }
 
@@ -225,4 +307,3 @@ func newCloseNotifyingRecorder() *closeNotifyingRecorder {
 func (c *closeNotifyingRecorder) CloseNotify() <-chan bool {
 	return c.closeNotifyChan
 }
-

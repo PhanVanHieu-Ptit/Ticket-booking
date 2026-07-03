@@ -3,7 +3,10 @@ package reclamation
 import (
 	"context"
 	"database/sql"
+	"time"
 
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/constants"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/holdtimer"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -27,10 +30,15 @@ func (r *reclamationRepository) ReclaimExpiredHolds(ctx context.Context) (int64,
 	}
 	defer tx.Rollback()
 
+	// expires_at <= NOW() is only a candidate filter here (bounds the query
+	// using Postgres's own clock); each candidate still gets a second,
+	// authoritative check against holdtimer's monotonic anchor below before
+	// actually being reclaimed, since NOW() can drift the same way as
+	// whatever OS clock change a developer is testing locally.
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, category, session_id 
-		FROM tickets 
-		WHERE status = 'Holding' AND expires_at <= NOW() 
+		SELECT id, category, session_id, expires_at
+		FROM tickets
+		WHERE status = 'Holding' AND expires_at <= NOW()
 		FOR UPDATE
 	`)
 	if err != nil {
@@ -42,17 +50,29 @@ func (r *reclamationRepository) ReclaimExpiredHolds(ctx context.Context) (int64,
 		ID        int64
 		Category  string
 		SessionID string
+		ExpiresAt time.Time
 	}
 
-	var tickets []reclaimedTicket
+	var candidates []reclaimedTicket
 	for rows.Next() {
 		var t reclaimedTicket
-		if err := rows.Scan(&t.ID, &t.Category, &t.SessionID); err != nil {
+		if err := rows.Scan(&t.ID, &t.Category, &t.SessionID, &t.ExpiresAt); err != nil {
 			return 0, err
+		}
+		candidates = append(candidates, t)
+	}
+	rows.Close()
+
+	var tickets []reclaimedTicket
+	for _, t := range candidates {
+		if holdtimer.SecondsRemaining(t.ID, t.ExpiresAt, constants.TicketHoldTTL) > 0 {
+			// The monotonic anchor says this hold genuinely still has time
+			// left despite Postgres's NOW() reporting it as expired; skip
+			// it this sweep, it'll be re-evaluated on the next tick.
+			continue
 		}
 		tickets = append(tickets, t)
 	}
-	rows.Close()
 
 	if len(tickets) == 0 {
 		return 0, nil
@@ -73,6 +93,9 @@ func (r *reclamationRepository) ReclaimExpiredHolds(ctx context.Context) (int64,
 	// Commit PostgreSQL transaction
 	if err := tx.Commit(); err != nil {
 		return 0, err
+	}
+	for _, t := range tickets {
+		holdtimer.Clear(t.ID)
 	}
 
 	// Sync Redis
@@ -128,6 +151,7 @@ func (r *reclamationRepository) ReclaimSessionHold(ctx context.Context, sessionI
 	if err := tx.Commit(); err != nil {
 		return "", err
 	}
+	holdtimer.Clear(id)
 
 	// Sync Redis
 	pipe := r.redis.Pipeline()

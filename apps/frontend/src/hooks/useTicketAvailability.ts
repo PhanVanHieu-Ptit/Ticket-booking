@@ -17,6 +17,7 @@ export function useTicketAvailability() {
   const isTabActiveRef = useRef<boolean>(true);
   const tabInactiveTimeoutRef = useRef<any>(null);
   const pollIntervalRef = useRef<any>(null);
+  const didInitRef = useRef<boolean>(false);
   // Mirrors `categories` for synchronous reads inside the SSE onopen handler
   // (see connectSSE below), which closes over stale state otherwise.
   const categoriesRef = useRef<TicketCategoryAvailability[]>([]);
@@ -202,10 +203,18 @@ export function useTicketAvailability() {
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    // Initial load: Fetch then connect stream
-    fetchInitialAvailability().then(() => {
+    if (!didInitRef.current) {
+      // Initial load: Fetch then connect stream
+      didInitRef.current = true;
+      fetchInitialAvailability().then(() => {
+        connectSSE();
+      });
+    } else {
+      // React.StrictMode re-invoked this effect after its phantom mount's
+      // cleanup already closed the SSE connection below — reconnect without
+      // re-issuing the REST fetch a second time.
       connectSSE();
-    });
+    }
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);

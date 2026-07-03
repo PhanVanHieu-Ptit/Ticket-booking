@@ -7,10 +7,11 @@ import (
 	"time"
 
 	appredis "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/redis"
-	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	appErrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/holdtimer"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/gin-gonic/gin"
 )
 
@@ -45,8 +46,14 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		return
 	}
 
-	// 1. Validate requested category is VIP or Standard
-	if req.Category != "VIP" && req.Category != "Standard" {
+	// 1. Validate requested category exists in the tickets table
+	var categoryExists bool
+	if err := h.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM tickets WHERE category = $1)", req.Category).Scan(&categoryExists); err != nil {
+		logger.Error("Failed to validate ticket category", "error", err, "category", req.Category)
+		c.Error(appErrors.NewInternal(err, "Internal server error"))
+		return
+	}
+	if !categoryExists {
 		c.Error(appErrors.New(http.StatusBadRequest, appErrors.ErrCodeInvalidCategory, "The requested ticket category is invalid."))
 		return
 	}
@@ -150,10 +157,7 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		// currentStatus == "Holding"
 		var secRem int64
 		if currentExpiresAt.Valid {
-			secRem = int64(time.Until(currentExpiresAt.Time).Seconds())
-			if secRem < 0 {
-				secRem = 0
-			}
+			secRem = holdtimer.SecondsRemaining(ticketID, currentExpiresAt.Time, ticketHoldTTL)
 		}
 		c.Error(appErrors.NewWithDetails(http.StatusBadRequest, appErrors.ErrCodeActiveHoldExists,
 			"You already have an active reservation. Please complete your purchase or wait for it to expire.",
@@ -196,6 +200,11 @@ func (h *ReservationHandler) ReserveTicket(c *gin.Context) {
 		c.Error(appErrors.Wrap(err, appErrors.ErrCodeReservationFailed, "Reservation failed during database commit", http.StatusInternalServerError))
 		return
 	}
+
+	// Anchor this hold's remaining-time tracking to the process's monotonic
+	// clock (see holdtimer) so later reads of seconds_remaining are immune
+	// to the machine's OS wall clock being changed.
+	holdtimer.Set(ticketID, heldAt)
 
 	// 5. Query ticket code and price to return in response
 	var ticketCode string
@@ -242,11 +251,15 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 	var status string
 	var heldAt, expiresAt time.Time
 
-	// Query active hold where status is 'Holding' and expires_at is in the future
+	// Query active hold by status alone -- deliberately not filtering on
+	// "expires_at > NOW()" here. NOW() is Postgres's own wall clock, which
+	// in local dev runs on the same machine (and can drift the same way)
+	// as whatever OS clock change is being tested. Expiry is instead
+	// decided below via holdtimer, which is immune to that.
 	err := h.db.QueryRowContext(ctx, `
 		SELECT id, ticket_code, category, price, status, held_at, expires_at
 		FROM tickets
-		WHERE session_id = $1 AND status = 'Holding' AND expires_at > NOW()
+		WHERE session_id = $1 AND status = 'Holding'
 	`, sessionID).Scan(&ticketID, &ticketCode, &category, &price, &status, &heldAt, &expiresAt)
 
 	if err != nil {
@@ -259,10 +272,10 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	secondsRemaining := int64(expiresAt.Sub(now).Seconds())
-	if secondsRemaining < 0 {
-		secondsRemaining = 0
+	secondsRemaining := holdtimer.SecondsRemaining(ticketID, expiresAt, ticketHoldTTL)
+	if secondsRemaining <= 0 {
+		c.Error(appErrors.New(http.StatusNotFound, appErrors.ErrCodeNoActiveHold, "No active reservation was found for this session."))
+		return
 	}
 
 	c.JSON(http.StatusOK, types.NewSuccessResponse(gin.H{
@@ -274,6 +287,6 @@ func (h *ReservationHandler) GetActiveHold(c *gin.Context) {
 		"held_at":           heldAt.Format(time.RFC3339),
 		"expires_at":        expiresAt.Format(time.RFC3339),
 		"seconds_remaining": secondsRemaining,
-		"server_time":       now.Format(time.RFC3339),
+		"server_time":       time.Now().Format(time.RFC3339),
 	}))
 }

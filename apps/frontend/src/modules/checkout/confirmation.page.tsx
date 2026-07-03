@@ -23,7 +23,7 @@ export const ConfirmationPage: React.FC = () => {
   }
 
   const isVip = holdDetails?.category?.toUpperCase() === "VIP";
-  const categoryLabel = isVip ? "VIP Experience" : "Standard Pass";
+  const categoryLabel = isVip ? "VIP Experience" : `${holdDetails?.category ?? ""} Pass`;
   const paidAtDate = new Date(orderResult.paidAt).toLocaleString();
 
   return (

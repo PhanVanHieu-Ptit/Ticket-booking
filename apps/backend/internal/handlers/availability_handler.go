@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,10 +10,11 @@ import (
 	"time"
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/session"
-	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/constants"
 	appErrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
@@ -35,54 +37,82 @@ func NewAvailabilityHandler(db *sql.DB, rdb *redis.Client, broker *sse.Broker, j
 	}
 }
 
-// GetAvailability retrieves the counts of remaining tickets directly from Redis available sets.
+// categoryDefinition represents a ticket category's static attributes as
+// derived from the tickets table (name, price, total inventory).
+type categoryDefinition struct {
+	Name  string
+	Price float64
+	Total int
+}
+
+// listCategoryDefinitions returns the distinct ticket categories currently
+// present in the tickets table, along with their price and total inventory.
+// This is the single source of truth for "which categories exist" — nothing
+// about the category list is hardcoded in Go.
+func (h *AvailabilityHandler) listCategoryDefinitions(ctx context.Context) ([]categoryDefinition, error) {
+	rows, err := h.db.QueryContext(ctx, `
+		SELECT category, MIN(price) AS price, COUNT(*) AS total
+		FROM tickets
+		GROUP BY category
+		ORDER BY MIN(price) DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var defs []categoryDefinition
+	for rows.Next() {
+		var d categoryDefinition
+		if err := rows.Scan(&d.Name, &d.Price, &d.Total); err != nil {
+			return nil, err
+		}
+		defs = append(defs, d)
+	}
+	return defs, rows.Err()
+}
+
+// GetAvailability retrieves the list of ticket categories from the database
+// and their remaining counts from Redis available sets.
 func (h *AvailabilityHandler) GetAvailability(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Query VIP and Standard available counts via SCARD
-	vipCount, err := h.rdb.SCard(ctx, "tickets:available:VIP").Result()
+	defs, err := h.listCategoryDefinitions(ctx)
 	if err != nil {
-		logger.Error("Failed to fetch available VIP count from Redis", "error", err)
+		logger.Error("Failed to fetch ticket categories from database", "error", err)
 		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
 
-	stdCount, err := h.rdb.SCard(ctx, "tickets:available:Standard").Result()
-	if err != nil {
-		logger.Error("Failed to fetch available Standard count from Redis", "error", err)
-		c.Error(appErrors.NewInternal(err, "Internal server error"))
-		return
-	}
+	categories := make([]gin.H, 0, len(defs))
+	totalCapacity := 0
+	for _, d := range defs {
+		available, err := h.rdb.SCard(ctx, constants.RedisKeyAvailableTickets(d.Name)).Result()
+		if err != nil {
+			logger.Error("Failed to fetch available count from Redis", "error", err, "category", d.Name)
+			c.Error(appErrors.NewInternal(err, "Internal server error"))
+			return
+		}
 
-	vipStatus := "Available"
-	if vipCount <= 0 {
-		vipStatus = "Sold Out"
-	}
+		status := "Available"
+		if available <= 0 {
+			status = "Sold Out"
+		}
 
-	stdStatus := "Available"
-	if stdCount <= 0 {
-		stdStatus = "Sold Out"
+		categories = append(categories, gin.H{
+			"name":      d.Name,
+			"price":     d.Price,
+			"available": available,
+			"total":     d.Total,
+			"status":    status,
+		})
+		totalCapacity += d.Total
 	}
 
 	response := gin.H{
 		"event_name":     "Neon Symphony: Hyperion Tour 2026",
-		"total_capacity": 500,
-		"categories": []gin.H{
-			{
-				"name":      "VIP",
-				"price":     100.0,
-				"available": vipCount,
-				"total":     100,
-				"status":    vipStatus,
-			},
-			{
-				"name":      "Standard",
-				"price":     50.0,
-				"available": stdCount,
-				"total":     400,
-				"status":    stdStatus,
-			},
-		},
+		"total_capacity": totalCapacity,
+		"categories":     categories,
 	}
 
 	c.JSON(http.StatusOK, types.NewSuccessResponse(response))
@@ -124,35 +154,29 @@ func (h *AvailabilityHandler) StreamAvailability(c *gin.Context) {
 
 	// Fetch and broadcast initial state immediately after establishing connection
 	ctx := c.Request.Context()
-	vipCount, err := h.rdb.SCard(ctx, "tickets:available:VIP").Result()
+	defs, err := h.listCategoryDefinitions(ctx)
 	if err != nil {
-		logger.Error("Failed to fetch VIP available counts for initial state", "error", err)
-		return
-	}
-	stdCount, err := h.rdb.SCard(ctx, "tickets:available:Standard").Result()
-	if err != nil {
-		logger.Error("Failed to fetch Standard available counts for initial state", "error", err)
+		logger.Error("Failed to fetch ticket categories for initial state", "error", err)
 		return
 	}
 
-	vipStatus := "Available"
-	if vipCount <= 0 {
-		vipStatus = "Sold Out"
-	}
-	stdStatus := "Available"
-	if stdCount <= 0 {
-		stdStatus = "Sold Out"
-	}
+	initialState := make(map[string]interface{}, len(defs))
+	for _, d := range defs {
+		available, err := h.rdb.SCard(ctx, constants.RedisKeyAvailableTickets(d.Name)).Result()
+		if err != nil {
+			logger.Error("Failed to fetch available counts for initial state", "error", err, "category", d.Name)
+			return
+		}
 
-	initialState := map[string]interface{}{
-		"VIP": map[string]interface{}{
-			"available": vipCount,
-			"status":    vipStatus,
-		},
-		"Standard": map[string]interface{}{
-			"available": stdCount,
-			"status":    stdStatus,
-		},
+		status := "Available"
+		if available <= 0 {
+			status = "Sold Out"
+		}
+
+		initialState[d.Name] = map[string]interface{}{
+			"available": available,
+			"status":    status,
+		}
 	}
 	initialData, _ := json.Marshal(initialState)
 

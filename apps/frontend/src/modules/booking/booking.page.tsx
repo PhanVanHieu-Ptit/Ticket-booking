@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Flame, Clock, Layers, ShieldAlert, AlertTriangle } from "lucide-react";
 import { useTicketAvailability } from "../../hooks/useTicketAvailability";
@@ -25,27 +25,32 @@ export const BookingPage: React.FC = () => {
   const totalAvailable = categories.reduce((sum, cat) => sum + cat.available, 0);
   const isEventSoldOut = !loading && categories.length > 0 && totalAvailable === 0;
 
-  const handleReserve = async (categoryName: string) => {
+  const handleReserve = useCallback(async (categoryName: string) => {
     setReservingCategory(categoryName);
     setReserveError(null);
     try {
       await bookingApi.reserveTicket(categoryName);
+      // Leaving reservingCategory set here on purpose: we're navigating away,
+      // and clearing it would re-render the button back to its normal
+      // enabled state for one frame right before the route unmounts it
+      // (a visible flash/flicker).
       navigate("/checkout");
     } catch (err: any) {
       // If the error indicates an active hold already exists, redirect directly to checkout page
       if (err.code === "ACTIVE_HOLD_EXISTS" || (err.message && err.message.includes("active reservation"))) {
         navigate("/checkout");
-      } else if (err.code === "TICKET_SOLD_OUT" || err.code === "TICKET_UNAVAILABLE") {
+        return;
+      }
+      if (err.code === "TICKET_SOLD_OUT" || err.code === "TICKET_UNAVAILABLE") {
         setReserveError("Sorry, this ticket just sold out. Please pick another category.");
       } else if (err.code === "TIMEOUT") {
         setReserveError("Slow connection, please try again.");
       } else {
         setReserveError(err.message || "Failed to reserve ticket. Please try again.");
       }
-    } finally {
       setReservingCategory(null);
     }
-  };
+  }, [navigate]);
 
   return (
     <div className="space-y-8 animate-fade-in">
