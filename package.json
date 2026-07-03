@@ -16,6 +16,8 @@
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f",
+    "db:reset-tickets": "bash apps/backend/db/reset_tickets.sh",
+    "db:seed-low-stock": "bash apps/backend/db/seed_low_stock.sh",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

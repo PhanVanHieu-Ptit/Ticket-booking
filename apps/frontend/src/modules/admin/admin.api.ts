@@ -1,3 +1,5 @@
+import { apiUrl } from "../../lib/apiBase";
+
 export interface AdminMetrics {
   totalTicketsSold: number;
   totalRevenue: number;
@@ -33,12 +35,13 @@ const getAuthHeaders = (): Record<string, string> => {
 
 export const adminApi = {
   login: async (passcode: string): Promise<string> => {
-    const response = await fetch("/api/v1/admin/login", {
+    const response = await fetch(apiUrl("/api/v1/admin/login"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ passcode }),
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -54,10 +57,11 @@ export const adminApi = {
   },
 
   getMetrics: async (): Promise<AdminMetrics> => {
-    const response = await fetch("/api/v1/admin/metrics", {
+    const response = await fetch(apiUrl("/api/v1/admin/metrics"), {
       headers: {
         ...getAuthHeaders(),
       },
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -80,10 +84,11 @@ export const adminApi = {
   },
 
   getActiveHolds: async (): Promise<ActiveHoldDetail[]> => {
-    const response = await fetch("/api/v1/admin/holds", {
+    const response = await fetch(apiUrl("/api/v1/admin/holds"), {
       headers: {
         ...getAuthHeaders(),
       },
+      credentials: "include",
     });
 
     if (!response.ok) {

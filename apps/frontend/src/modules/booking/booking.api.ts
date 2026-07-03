@@ -1,3 +1,5 @@
+import { apiUrl } from "../../lib/apiBase";
+
 export interface TicketCategoryAvailability {
   name: string;
   price: number;
@@ -39,7 +41,9 @@ export interface AvailabilityResponse {
 
 export const bookingApi = {
   getAvailability: async (): Promise<TicketCategoryAvailability[]> => {
-    const response = await fetch("/api/v1/tickets/availability");
+    const response = await fetch(apiUrl("/api/v1/tickets/availability"), {
+      credentials: "include",
+    });
     if (!response.ok) {
       throw new Error("Failed to fetch ticket availability");
     }
@@ -53,13 +57,14 @@ export const bookingApi = {
 
     let response: Response;
     try {
-      response = await fetch("/api/v1/tickets/reserve", {
+      response = await fetch(apiUrl("/api/v1/tickets/reserve"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ category }),
         signal: controller.signal,
+        credentials: "include",
       });
     } catch (err: any) {
       if (err.name === "AbortError") {
@@ -84,7 +89,9 @@ export const bookingApi = {
   },
 
   getActiveHold: async (): Promise<ReservationDetails> => {
-    const response = await fetch("/api/v1/tickets/hold");
+    const response = await fetch(apiUrl("/api/v1/tickets/hold"), {
+      credentials: "include",
+    });
     if (!response.ok) {
       const errResult: ApiResponse<any> = await response.json().catch(() => ({ success: false }));
       const errorObj = new Error(errResult.error?.message || "No active hold found");
@@ -96,8 +103,9 @@ export const bookingApi = {
   },
 
   cancelHold: async (): Promise<void> => {
-    const response = await fetch("/api/v1/tickets/hold/cancel", {
+    const response = await fetch(apiUrl("/api/v1/tickets/hold/cancel"), {
       method: "POST",
+      credentials: "include",
     });
     if (!response.ok) {
       const errResult: ApiResponse<any> = await response.json().catch(() => ({ success: false }));

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import { AdminLayout } from "./admin.layout";
 import { useAdminState } from "./admin.state";
+import { useAdminRealtime } from "../../hooks/useAdminRealtime";
 import { LogOut, RefreshCw, Lock, ShieldAlert } from "lucide-react";
 
 export const AdminPage: React.FC = () => {
@@ -20,20 +21,19 @@ export const AdminPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Poll metrics & holds every 5 seconds when authenticated
-  useEffect(() => {
-    if (!token) return;
-
+  const refetchAll = useCallback(() => {
     fetchMetrics();
     fetchHolds();
+  }, [fetchMetrics, fetchHolds]);
 
-    const interval = setInterval(() => {
-      fetchMetrics();
-      fetchHolds();
-    }, 5000);
+  // Fetch once on login/mount
+  useEffect(() => {
+    if (!token) return;
+    refetchAll();
+  }, [token, refetchAll]);
 
-    return () => clearInterval(interval);
-  }, [token, fetchMetrics, fetchHolds]);
+  // Realtime: push-driven refetch via SSE, with a slow safety-net poll while disconnected
+  const { isConnected, isDegraded } = useAdminRealtime(token, refetchAll);
 
   // Decrement secondsRemaining client-side every second for smooth countdown ticking
   useEffect(() => {
@@ -132,15 +132,24 @@ export const AdminPage: React.FC = () => {
             <h2 className="text-3xl font-extrabold tracking-tight text-white bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
               Admin Dashboard
             </h2>
-            <p className="text-zinc-400 text-sm mt-1">Real-time metrics and active ticket hold monitor.</p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-zinc-400 text-sm">Real-time metrics and active ticket hold monitor.</p>
+              <span
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
+                  isConnected
+                    ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                    : "bg-amber-500/10 border border-amber-500/20 text-amber-400"
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
+                {isConnected ? "Live" : isDegraded ? "Reconnecting..." : "Connecting..."}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => {
-                fetchMetrics();
-                fetchHolds();
-              }}
+              onClick={refetchAll}
               className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-805 text-xs font-semibold transition-all"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />

@@ -12,7 +12,9 @@ import (
 )
 
 // SessionMiddleware intercepts requests, verifies/issues the session_token cookie, and injects session ID into request context.
-func SessionMiddleware(jwtSecret string, isProd bool) gin.HandlerFunc {
+// crossSite indicates the frontend is deployed on a different origin than this backend
+// (e.g. Vercel + Render), which requires SameSite=None and Secure for the cookie to be sent at all.
+func SessionMiddleware(jwtSecret string, isProd bool, crossSite bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var sessionID string
 		var expiresAt time.Time
@@ -43,9 +45,15 @@ func SessionMiddleware(jwtSecret string, isProd bool) gin.HandlerFunc {
 			}
 			expiresAt = exp
 
-			// Set the cookie
-			c.SetSameSite(http.SameSiteStrictMode)
-			c.SetCookie("session_token", tokenStr, 1800, "/", "", isProd, true)
+			// Set the cookie. SameSite=None requires Secure regardless of isProd,
+			// since browsers reject non-Secure SameSite=None cookies outright.
+			if crossSite {
+				c.SetSameSite(http.SameSiteNoneMode)
+				c.SetCookie("session_token", tokenStr, 1800, "/", "", true, true)
+			} else {
+				c.SetSameSite(http.SameSiteStrictMode)
+				c.SetCookie("session_token", tokenStr, 1800, "/", "", isProd, true)
+			}
 		}
 
 		// 4. Inject into context
