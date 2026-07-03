@@ -197,10 +197,14 @@ Full walkthrough (including PgBouncer/Redis details and Lighthouse testing notes
 | `npm run lint` | Runs ESLint across the workspace |
 | `npm run format` | Formats all source files with Prettier |
 | `npm run format:check` | Checks formatting without writing changes |
+| `npm run test:backend` | Runs the Go backend test suite (`go test ./...`) |
+| `npm run test:backend:race` | Runs the Go backend test suite with the data race detector |
 | `npm run test:e2e` | Runs Playwright end-to-end tests |
 | `npm run test:e2e:ci` | Runs Playwright tests with CI reporters |
 
-Database migrations/seeding also have `Makefile` shortcuts: `make migrate-up`, `make migrate-down`, `make seed`, `make db-reset`.
+Database migrations/seeding also have `Makefile` shortcuts: `make migrate-up`, `make migrate-down`, `make seed`, `make db-reset`, `make test`.
+
+> Most backend tests are integration-style and hit real Postgres/Redis (`npm run infra:up` first); they call `t.Skip` automatically if that infra isn't reachable, so `npm run test:backend` is still safe to run without it — you'll just skip the DB/Redis-backed cases.
 
 ---
 
@@ -218,6 +222,8 @@ Database migrations/seeding also have `Makefile` shortcuts: `make migrate-up`, `
 | `ADMIN_TOKEN` | Backend | Passcode used to obtain an admin JWT |
 | `JWT_SECRET` | Backend | Signing secret for user/admin session JWTs |
 | `CORS_ALLOWED_ORIGINS` | Backend | Allowed cross-origin frontend URL (also toggles cookie `SameSite` mode) |
+
+> 🔑 **Admin dashboard passcode (local/seeded default):** `ADMIN_PASSCODE = admin123` — enter this on the admin login page to obtain an admin JWT. Change it in production via the `admin_configs` table (`admin_passcode` key, bcrypt-hashed).
 
 Full context: [`docs/01_PROJECT_CONTEXT.md`](docs/01_PROJECT_CONTEXT.md) and the `.env.example` files in `apps/backend/` and `apps/frontend/`.
 
@@ -296,6 +302,7 @@ Full step-by-step: [`DEVELOPMENT.md` § Deployment](DEVELOPMENT.md#deployment).
    ```bash
    npm run lint
    npm run format:check
+   npm run test:backend
    npm run test:e2e
    ```
 4. Update `AI_CONTEXT.md` if you touch architecture or discover a new known issue (see [AI Agent Workflow](#10-ai-agent-workflow)).
