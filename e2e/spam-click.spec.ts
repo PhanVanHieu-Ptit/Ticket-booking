@@ -50,7 +50,7 @@ test('spam-clicking Reserve sends exactly one reservation request', async ({ pag
   // the first click lands, so a live name-based locator (e.g. getByRole('button',
   // { name: /^Reserve /i }).first()) would silently re-target a *different*
   // card's button on the remaining spam clicks instead of re-clicking this one.
-  const card = page.getByText('Inventory Remaining', { exact: true }).first().locator('xpath=ancestor::div[.//h3][1]');
+  const card = page.getByText('Inventory Remaining', { exact: true }).first().locator('xpath=ancestor::div[.//h2][1]');
   const reserveButton = card.getByRole('button');
   await expect(reserveButton).toBeEnabled();
 

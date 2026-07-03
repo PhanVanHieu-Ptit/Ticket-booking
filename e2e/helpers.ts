@@ -62,10 +62,10 @@ export async function getAvailableCount(page: Page, categoryLabel?: string): Pro
   const cardCount = await inventoryLabels.count();
 
   for (let i = 0; i < cardCount; i++) {
-    const card = inventoryLabels.nth(i).locator('xpath=ancestor::div[.//h3][1]');
+    const card = inventoryLabels.nth(i).locator('xpath=ancestor::div[.//h2][1]');
 
     if (categoryLabel) {
-      const heading = await card.locator('h3').innerText();
+      const heading = await card.locator('h2').innerText();
       if (!heading.toLowerCase().includes(categoryLabel.toLowerCase())) continue;
     }
 

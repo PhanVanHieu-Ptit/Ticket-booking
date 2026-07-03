@@ -43,15 +43,15 @@ async function getHeldCount(request: APIRequestContext, token: string, category:
 
 /**
  * Locates the ticket category card by its rendered heading (e.g. "Standard Pass").
- * Mirrors the "Inventory Remaining" → ancestor::div[.//h3][1] pattern from
- * ./helpers.ts: anchoring the ancestor climb on the h3 itself instead would
+ * Mirrors the "Inventory Remaining" → ancestor::div[.//h2][1] pattern from
+ * ./helpers.ts: anchoring the ancestor climb on the h2 itself instead would
  * resolve to an inner wrapper div (heading+badge only) that doesn't contain
  * the Reserve button, since the button lives in a sibling subtree of the card.
  */
 function getCategoryCard(page: Page, headingText: string) {
   return page
     .getByText('Inventory Remaining', { exact: true })
-    .locator('xpath=ancestor::div[.//h3][1]')
+    .locator('xpath=ancestor::div[.//h2][1]')
     .filter({ has: page.getByRole('heading', { name: headingText, exact: true }) });
 }
 
