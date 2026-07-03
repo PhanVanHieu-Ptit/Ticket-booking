@@ -334,10 +334,10 @@ export const CheckoutPage: React.FC = () => {
 
   return (
     <CheckoutLayout>
-      <div className="grid gap-8 lg:grid-cols-3 items-start animate-fade-in">
+      <div className="grid gap-6 lg:gap-8 lg:grid-cols-3 items-start animate-fade-in">
         {/* Left Side: Form */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="p-6 md:p-8 rounded-3xl border border-white/5 glass-premium space-y-6">
+        <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
+          <div className="p-4 sm:p-6 md:p-8 rounded-3xl border border-white/5 glass-premium space-y-6">
             <div className="flex justify-between items-center pb-4 border-b border-white/5">
               <h3 className="text-xl font-bold">Billing Information</h3>
               <div className="flex items-center gap-1.5 text-xs text-green-400 bg-green-500/10 px-2.5 py-1 rounded-full border border-green-500/20 font-medium">
@@ -483,9 +483,9 @@ export const CheckoutPage: React.FC = () => {
         </div>
 
         {/* Right Side: Order Summary & Countdown */}
-        <div className="space-y-6">
+        <div className="space-y-6 order-1 lg:order-2">
           {/* Order Summary Card */}
-          <div className="p-6 rounded-3xl border border-white/5 glass space-y-4">
+          <div className="p-4 sm:p-6 rounded-3xl border border-white/5 glass space-y-4">
             <h3 className="text-lg font-bold">Order Summary</h3>
             <div className="flex justify-between text-neutral-400 text-sm">
               <span>1x {ticketCategoryLabel}</span>

@@ -11,54 +11,54 @@ function Layout() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-primary selection:text-white">
       {/* Navigation Header */}
-      <header className="sticky top-0 z-50 glass border-b border-white/5 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
+      <header className="sticky top-0 z-50 glass border-b border-white/5 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 cursor-pointer min-w-0" onClick={() => navigate('/')}>
           <div className="p-2 bg-primary/20 rounded-xl border border-primary/30 glow-active">
             <Flame className="w-6 h-6 text-primary" />
           </div>
-          <div>
-            <span className="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-neutral-200 to-primary">
+          <div className="min-w-0">
+            <span className="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-neutral-200 to-primary truncate">
               TICKET RUSH
             </span>
-            <span className="ml-2 text-xs font-semibold px-2 py-0.5 bg-white/10 rounded-full text-neutral-300">
+            <span className="ml-2 text-xs font-semibold px-2 py-0.5 bg-white/10 rounded-full text-neutral-300 hidden sm:inline-block">
               v1.0.0-foundation
             </span>
           </div>
         </div>
 
-        <nav className="flex items-center gap-2">
+        <nav className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => navigate('/')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 min-h-11 min-w-11 rounded-lg text-sm font-medium transition-all ${
               activeTab === 'home'
                 ? 'bg-primary text-white shadow-lg shadow-primary/20'
                 : 'text-neutral-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Ticket className="w-4 h-4" />
-            Concert & Booking
+            <span className="hidden sm:inline">Concert & Booking</span>
           </button>
           <button
             onClick={() => navigate('/admin')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 min-h-11 min-w-11 rounded-lg text-sm font-medium transition-all ${
               activeTab === 'admin'
                 ? 'bg-primary text-white shadow-lg shadow-primary/20'
                 : 'text-neutral-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <BarChart3 className="w-4 h-4" />
-            Admin Dashboard
+            <span className="hidden sm:inline">Admin Dashboard</span>
           </button>
         </nav>
       </header>
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 md:p-8">
         <Outlet />
       </main>
 
       {/* Footer */}
-      <footer className="glass border-t border-white/5 py-6 px-8 text-center text-xs text-neutral-400 flex flex-col sm:flex-row gap-4 items-center justify-between">
+      <footer className="glass border-t border-white/5 py-6 px-4 sm:px-8 text-center text-xs text-neutral-400 flex flex-col sm:flex-row gap-4 items-center justify-between">
         <p>© 2026 Ticket Rush Inc. All rights reserved.</p>
         <div className="flex gap-4">
           <a href="#" className="hover:text-neutral-300 transition-colors">
