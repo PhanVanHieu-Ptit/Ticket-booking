@@ -1,9 +1,5 @@
 import { Ticket, BarChart3, Flame } from 'lucide-react';
 import { createBrowserRouter, RouterProvider, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { BookingPage } from './modules/booking/booking.page';
-import { CheckoutPage } from './modules/checkout/checkout.page';
-import { ConfirmationPage } from './modules/checkout/confirmation.page';
-import { AdminPage } from './modules/admin/admin.page';
 
 function Layout() {
   const navigate = useNavigate();
@@ -62,7 +58,7 @@ function Layout() {
       </main>
 
       {/* Footer */}
-      <footer className="glass border-t border-white/5 py-6 px-8 text-center text-xs text-neutral-500 flex flex-col sm:flex-row gap-4 items-center justify-between">
+      <footer className="glass border-t border-white/5 py-6 px-8 text-center text-xs text-neutral-400 flex flex-col sm:flex-row gap-4 items-center justify-between">
         <p>© 2026 Ticket Rush Inc. All rights reserved.</p>
         <div className="flex gap-4">
           <a href="#" className="hover:text-neutral-300 transition-colors">
@@ -87,19 +83,31 @@ const router = createBrowserRouter([
     children: [
       {
         path: '',
-        element: <BookingPage />,
+        lazy: async () => {
+          const { BookingPage } = await import('./modules/booking/booking.page');
+          return { Component: BookingPage };
+        },
       },
       {
         path: 'checkout',
-        element: <CheckoutPage />,
+        lazy: async () => {
+          const { CheckoutPage } = await import('./modules/checkout/checkout.page');
+          return { Component: CheckoutPage };
+        },
       },
       {
         path: 'confirmation',
-        element: <ConfirmationPage />,
+        lazy: async () => {
+          const { ConfirmationPage } = await import('./modules/checkout/confirmation.page');
+          return { Component: ConfirmationPage };
+        },
       },
       {
         path: 'admin',
-        element: <AdminPage />,
+        lazy: async () => {
+          const { AdminPage } = await import('./modules/admin/admin.page');
+          return { Component: AdminPage };
+        },
       },
     ],
   },

@@ -5,12 +5,6 @@ import (
 	"time"
 )
 
-// Ticket Categories
-const (
-	TicketCategoryVIP      = "VIP"
-	TicketCategoryStandard = "Standard"
-)
-
 // Ticket Statuses
 const (
 	TicketStatusAvailable = "Available"

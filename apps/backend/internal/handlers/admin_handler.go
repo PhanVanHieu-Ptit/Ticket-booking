@@ -73,17 +73,12 @@ func (h *AdminHandler) Login(c *gin.Context) {
 	}))
 }
 
-type InventoryBreakdown struct {
-	VIP      int `json:"VIP"`
-	Standard int `json:"Standard"`
-}
-
 type MetricsResponse struct {
-	TotalTicketsSold   int                `json:"total_tickets_sold"`
-	TotalRevenue       float64            `json:"total_revenue"`
-	RemainingInventory InventoryBreakdown `json:"remaining_inventory"`
-	HeldInventory      InventoryBreakdown `json:"held_inventory"`
-	AvailableInventory InventoryBreakdown `json:"available_inventory"`
+	TotalTicketsSold   int            `json:"total_tickets_sold"`
+	TotalRevenue       float64        `json:"total_revenue"`
+	RemainingInventory map[string]int `json:"remaining_inventory"`
+	HeldInventory      map[string]int `json:"held_inventory"`
+	AvailableInventory map[string]int `json:"available_inventory"`
 }
 
 type HoldDetail struct {
@@ -124,10 +119,8 @@ func (h *AdminHandler) GetMetrics(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var (
-		availVIP, availStd int
-		heldVIP, heldStd   int
-	)
+	available := make(map[string]int)
+	held := make(map[string]int)
 
 	for rows.Next() {
 		var category, status string
@@ -137,39 +130,30 @@ func (h *AdminHandler) GetMetrics(c *gin.Context) {
 			c.Error(errors.NewInternal(err, "An unexpected database error occurred"))
 			return
 		}
-		switch category {
-		case "VIP":
-			switch status {
-			case "Available":
-				availVIP = count
-			case "Holding":
-				heldVIP = count
-			}
-		case "Standard":
-			switch status {
-			case "Available":
-				availStd = count
-			case "Holding":
-				heldStd = count
-			}
+		switch status {
+		case "Available":
+			available[category] = count
+		case "Holding":
+			held[category] = count
+		}
+	}
+
+	remaining := make(map[string]int, len(available))
+	for category, count := range available {
+		remaining[category] = count + held[category]
+	}
+	for category, count := range held {
+		if _, ok := remaining[category]; !ok {
+			remaining[category] = count
 		}
 	}
 
 	metrics := MetricsResponse{
-		TotalTicketsSold: totalTicketsSold,
-		TotalRevenue:     totalRevenue,
-		RemainingInventory: InventoryBreakdown{
-			VIP:      availVIP + heldVIP,
-			Standard: availStd + heldStd,
-		},
-		HeldInventory: InventoryBreakdown{
-			VIP:      heldVIP,
-			Standard: heldStd,
-		},
-		AvailableInventory: InventoryBreakdown{
-			VIP:      availVIP,
-			Standard: availStd,
-		},
+		TotalTicketsSold:   totalTicketsSold,
+		TotalRevenue:       totalRevenue,
+		RemainingInventory: remaining,
+		HeldInventory:      held,
+		AvailableInventory: available,
 	}
 
 	c.JSON(http.StatusOK, types.NewSuccessResponse(metrics))
@@ -222,4 +206,3 @@ func (h *AdminHandler) GetHolds(c *gin.Context) {
 
 	c.JSON(http.StatusOK, types.NewSuccessResponse(holds))
 }
-

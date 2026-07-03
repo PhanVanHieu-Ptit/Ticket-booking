@@ -8,11 +8,11 @@ interface TicketCategoryCardProps {
   isReserving?: boolean;
 }
 
-export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
+export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = React.memo(function TicketCategoryCard({
   category,
   onReserve,
   isReserving = false,
-}) => {
+}) {
   const { name, price, available, total, status } = category;
   const isSoldOut = available <= 0 || status === "Sold Out";
   const percentage = total > 0 ? (available / total) * 100 : 0;
@@ -24,7 +24,7 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
     : "border-white/5 hover:border-white/10";
   const priceColorClass = isVip ? "text-primary" : "text-neutral-200";
   const badgeClass = isVip
-    ? "text-primary bg-primary/10 border-primary/20"
+    ? "text-purple-400 bg-primary/10 border-primary/20"
     : "text-neutral-400 bg-white/5 border-white/5";
   const progressColorClass = isVip
     ? "bg-gradient-to-r from-primary to-purple-500"
@@ -39,7 +39,7 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl glass p-6 border transition-all group flex flex-col justify-between space-y-6 ${cardBorderClass}`}
+      className={`relative overflow-hidden rounded-2xl glass p-6 border transition group flex flex-col justify-between space-y-6 ${cardBorderClass}`}
     >
       {isVip && (
         <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-2xl pointer-events-none" />
@@ -52,9 +52,9 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
             >
               {isVip ? "Premium" : "General Admission"}
             </span>
-            <h3 className="text-2xl font-bold mt-2">
-              {isVip ? "VIP Experience" : "Standard Pass"}
-            </h3>
+            <h2 className="text-2xl font-bold mt-2">
+              {isVip ? "VIP Experience" : `${name} Pass`}
+            </h2>
           </div>
           <span className={`text-3xl font-extrabold ${priceColorClass}`}>
             ${price}
@@ -63,7 +63,7 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
         <p className="text-sm text-neutral-400">
           {isVip
             ? "Front row access, private lounge entry, complimentary merchandise, and meet-and-greet options."
-            : "Access to main standing arena, standard food and beverage stalls, and high-fidelity sound zones."}
+            : `Access to the ${name.toLowerCase()} tier: main event entry, food and beverage stalls, and high-fidelity sound zones.`}
         </p>
       </div>
 
@@ -77,7 +77,7 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
           </div>
           <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${progressColorClass}`}
+              className={`h-full rounded-full transition-[width] duration-500 ${progressColorClass}`}
               style={{ width: `${percentage}%` }}
             />
           </div>
@@ -85,7 +85,7 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
         <button
           onClick={() => !isDisabled && onReserve(name)}
           disabled={isDisabled}
-          className={`w-full py-3 px-4 font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${buttonClass}`}
+          className={`w-full py-3 px-4 font-bold rounded-xl transition will-change-transform flex items-center justify-center gap-2 ${buttonClass}`}
         >
           {isReserving ? (
             <>
@@ -102,4 +102,4 @@ export const TicketCategoryCard: React.FC<TicketCategoryCardProps> = ({
       </div>
     </div>
   );
-};
+});

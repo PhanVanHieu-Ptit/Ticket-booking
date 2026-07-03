@@ -49,14 +49,21 @@ export const CheckoutPage: React.FC = () => {
   const navigate = useNavigate();
   const [holdDetails, setHoldDetails] = useState<ReservationDetails | null>(null);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(300);
-  const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [expired, setExpired] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Client/server clock offset (ms), computed once from the first server_time we see.
-  const clockOffsetRef = useRef<number>(0);
-  const offsetInitializedRef = useRef<boolean>(false);
+  // Countdown source of truth: the server's own seconds_remaining as of the
+  // last sync. Ticking decrements this by exactly 1 on each setInterval
+  // callback instead of computing elapsed time from any clock reading --
+  // neither Date.now() nor performance.now() are read here, since on some
+  // browser/OS combinations performance.now() has been observed to track
+  // the OS wall clock too (despite the spec calling for it to be immune).
+  // setInterval's own scheduling doesn't need a clock reading to know "a
+  // second passed", so this stays correct regardless of clock changes.
+  const remainingRef = useRef<number>(0);
   const verifyingExpiryRef = useRef<boolean>(false);
+  const didFetchHoldRef = useRef<boolean>(false);
   const [email, setEmail] = useState<string>("");
   const [cardName, setCardName] = useState<string>("");
   const [cardNumber, setCardNumber] = useState<string>("");
@@ -119,42 +126,43 @@ export const CheckoutPage: React.FC = () => {
     }
   };
 
-  // Applies a fresh hold response: syncs the absolute expiry, the one-time
-  // clock offset (if not already computed), and the derived display state.
+  // Applies a fresh hold response: trusts the server's own seconds_remaining
+  // as ground truth, re-anchoring the countdown to it.
   const applyHoldDetails = (details: ReservationDetails) => {
-    if (!offsetInitializedRef.current && details.server_time) {
-      const serverMs = new Date(details.server_time).getTime();
-      if (!Number.isNaN(serverMs)) {
-        clockOffsetRef.current = serverMs - Date.now();
-      }
-      offsetInitializedRef.current = true;
-    }
-
-    const expMs = new Date(details.expires_at).getTime();
-    const remaining = Number.isNaN(expMs)
-      ? 0
-      : Math.max(0, Math.round((expMs - (Date.now() + clockOffsetRef.current)) / 1000));
+    const baseline = Math.max(0, Math.round(details.seconds_remaining));
+    remainingRef.current = baseline;
 
     setHoldDetails(details);
-    setExpiresAtMs(Number.isNaN(expMs) ? null : expMs);
-    setSecondsRemaining(remaining);
-    setExpired(remaining <= 0);
+    setSecondsRemaining(baseline);
+    setExpired(baseline <= 0);
   };
 
   const fetchHold = async () => {
     try {
       const details = await bookingApi.getActiveHold();
+      setLoadError(null);
       applyHoldDetails(details);
     } catch (err: any) {
-      // Redirect to home if there is no active hold found for this session
-      navigate("/");
+      if (err.code === "NO_ACTIVE_HOLD") {
+        // Genuinely no reservation for this session — safe to send home.
+        navigate("/");
+      } else {
+        // Any other failure (network blip, 5xx, etc.) — surface it instead of
+        // silently bouncing the user back to the home page.
+        setLoadError(err.message || "Failed to load your reservation. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchHold();
+    // Guard against React.StrictMode's mount -> cleanup -> re-mount cycle
+    // firing this twice in development.
+    if (!didFetchHoldRef.current) {
+      didFetchHoldRef.current = true;
+      fetchHold();
+    }
 
     // Re-sync on window focus/visibility changes to keep the timer strictly aligned
     const handleVisibilityChange = () => {
@@ -169,10 +177,11 @@ export const CheckoutPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (loading || expired || expiresAtMs === null) return;
+    if (loading || expired) return;
 
     const timer = setInterval(() => {
-      const remaining = Math.ceil((expiresAtMs - (Date.now() + clockOffsetRef.current)) / 1000);
+      remainingRef.current = Math.max(0, remainingRef.current - 1);
+      const remaining = remainingRef.current;
 
       if (remaining > 0) {
         setSecondsRemaining(remaining);
@@ -203,7 +212,7 @@ export const CheckoutPage: React.FC = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [loading, expired, expiresAtMs]);
+  }, [loading, expired]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -291,9 +300,37 @@ export const CheckoutPage: React.FC = () => {
     );
   }
 
+  if (loadError) {
+    return (
+      <CheckoutLayout>
+        <div className="flex flex-col items-center justify-center py-20 space-y-4 text-center">
+          <AlertTriangle className="w-12 h-12 text-red-400" />
+          <p className="text-red-200 font-semibold max-w-md">{loadError}</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setLoading(true);
+                fetchHold();
+              }}
+              className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-sm font-semibold rounded-lg transition"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => navigate("/")}
+              className="px-4 py-2 bg-primary hover:bg-primary/95 text-white text-sm font-semibold rounded-lg transition"
+            >
+              Return to Home
+            </button>
+          </div>
+        </div>
+      </CheckoutLayout>
+    );
+  }
+
   const isVip = holdDetails?.category.toUpperCase() === "VIP";
   const price = holdDetails?.price || 0;
-  const ticketCategoryLabel = isVip ? "VIP Experience" : "Standard Pass";
+  const ticketCategoryLabel = isVip ? "VIP Experience" : `${holdDetails?.category ?? ""} Pass`;
 
   return (
     <CheckoutLayout>
@@ -414,7 +451,7 @@ export const CheckoutPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={expired || cancelling || isProcessing}
-                className="w-full py-4 bg-primary hover:bg-primary/95 text-white font-bold rounded-xl transition-all shadow-lg shadow-primary/20 hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                className="w-full py-4 bg-primary hover:bg-primary/95 text-white font-bold rounded-xl transition shadow-lg shadow-primary/20 hover:scale-[1.01] will-change-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 {isProcessing ? (
                   <>
@@ -433,7 +470,7 @@ export const CheckoutPage: React.FC = () => {
                 type="button"
                 onClick={handleCancelReservation}
                 disabled={expired || cancelling || isProcessing}
-                className="w-full py-3 bg-neutral-900 hover:bg-neutral-800/80 text-neutral-300 font-semibold rounded-xl border border-white/5 transition-all hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                className="w-full py-3 bg-neutral-900 hover:bg-neutral-800/80 text-neutral-300 font-semibold rounded-xl border border-white/5 transition hover:scale-[1.01] will-change-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 {cancelling ? (
                   <div className="w-5 h-5 border-2 border-neutral-300 border-t-transparent rounded-full animate-spin" />

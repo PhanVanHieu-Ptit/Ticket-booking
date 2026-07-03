@@ -1,9 +1,9 @@
 export interface AdminMetrics {
   totalTicketsSold: number;
   totalRevenue: number;
-  remainingInventory: { VIP: number; Standard: number };
-  heldInventory: { VIP: number; Standard: number };
-  availableInventory: { VIP: number; Standard: number };
+  remainingInventory: Record<string, number>;
+  heldInventory: Record<string, number>;
+  availableInventory: Record<string, number>;
 }
 
 export interface ActiveHoldDetail {
@@ -73,18 +73,9 @@ export const adminApi = {
     return {
       totalTicketsSold: data.total_tickets_sold,
       totalRevenue: data.total_revenue,
-      remainingInventory: {
-        VIP: data.remaining_inventory.VIP,
-        Standard: data.remaining_inventory.Standard,
-      },
-      heldInventory: {
-        VIP: data.held_inventory.VIP,
-        Standard: data.held_inventory.Standard,
-      },
-      availableInventory: {
-        VIP: data.available_inventory.VIP,
-        Standard: data.available_inventory.Standard,
-      },
+      remainingInventory: data.remaining_inventory ?? {},
+      heldInventory: data.held_inventory ?? {},
+      availableInventory: data.available_inventory ?? {},
     };
   },
 

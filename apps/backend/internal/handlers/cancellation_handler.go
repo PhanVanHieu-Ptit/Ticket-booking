@@ -6,6 +6,7 @@ import (
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	appErrors "github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/holdtimer"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
 	"github.com/gin-gonic/gin"
@@ -70,6 +71,7 @@ func (h *ReservationHandler) CancelHold(c *gin.Context) {
 		c.Error(appErrors.NewInternal(err, "Internal server error"))
 		return
 	}
+	holdtimer.Clear(ticketID)
 
 	// 6. Redis updates - Delete hold key and add ticket back to available set
 	if err := h.redisSvc.ReleaseHold(ctx, sessionID, category, ticketID); err != nil {

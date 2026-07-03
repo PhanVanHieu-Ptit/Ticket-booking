@@ -12,6 +12,7 @@
     "dev:frontend": "npm run dev --workspace=apps/frontend",
     "dev:backend": "cd apps/backend && go run cmd/api/main.go",
     "build:frontend": "npm run build --workspace=apps/frontend",
+    "preview:frontend": "npm run build --workspace=apps/frontend && npm run preview --workspace=apps/frontend",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f",

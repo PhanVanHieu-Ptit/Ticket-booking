@@ -58,42 +58,28 @@ function getCategoryCard(page: Page, headingText: string) {
 type ReserveOutcome = 'held' | 'sold_out';
 
 /**
- * Fires a forced click on the category's Reserve button without awaiting the
- * click's own resolution, so callers can fire two of these in a true
- * Promise.all() race across two independent browser contexts/sessions.
+ * Fires a forced click on the category's Reserve button and determines the
+ * outcome directly from the HTTP status of *that click's own* POST
+ * /tickets/reserve response, rather than from page text/URL afterwards.
+ *
+ * Reading outcome off the UI (e.g. matching "sold out" text anywhere on the
+ * page) is unreliable here: ReserveTicket broadcasts the updated inventory
+ * count over SSE to *every* connected session — including the winner's own
+ * page — before it finishes writing the winner's own HTTP response (see
+ * apps/backend/internal/handlers/reservation_handler.go step 6 running
+ * before the trailing c.JSON). That means the winning page's own
+ * TicketCategoryCard can flip to its generic "Sold Out" label for an instant
+ * before that same page's navigate("/checkout") runs, and a UI-text poll can
+ * catch that transient frame and misreport the winner as sold out. The
+ * response status is unambiguous and can't be confused by that broadcast.
  */
-function fireReserveClick(page: Page): Promise<void> {
+async function reserveAndGetOutcome(page: Page): Promise<ReserveOutcome> {
   const button = getCategoryCard(page, CATEGORY_HEADING).getByRole('button');
-  return button.click({ force: true }).catch(() => {});
-}
-
-/**
- * Waits for a page's reservation attempt to resolve into one of two outcomes:
- * - 'held': navigated to /checkout (booking.page.tsx navigates there on success
- *   or on ACTIVE_HOLD_EXISTS), where checkout.page.tsx shows the hold's
- *   countdown ("Hold expires in mm:ss").
- * - 'sold_out': stayed on the booking page and shows the inline
- *   "sold out" error (booking.page.tsx's TICKET_UNAVAILABLE branch), with no
- *   broken/blank UI.
- */
-async function waitForReserveOutcome(page: Page): Promise<ReserveOutcome> {
-  await expect
-    .poll(
-      async () => {
-        if (/\/checkout/.test(page.url())) return 'held';
-        const soldOutVisible = await page
-          .getByText(/sold out/i)
-          .first()
-          .isVisible()
-          .catch(() => false);
-        if (soldOutVisible) return 'sold_out';
-        return 'pending';
-      },
-      { timeout: 10_000, message: `page never resolved to a held/sold-out state; final URL: ${page.url()}` }
-    )
-    .not.toBe('pending');
-
-  return /\/checkout/.test(page.url()) ? 'held' : 'sold_out';
+  const [response] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes('/api/v1/tickets/reserve') && r.request().method() === 'POST'),
+    button.click({ force: true }).catch(() => {}),
+  ]);
+  return response.ok() ? 'held' : 'sold_out';
 }
 
 /**
@@ -118,9 +104,7 @@ async function runOversellRace(browser: Browser, request: APIRequestContext): Pr
 
     // Bấm nút "Chọn vé" (Reserve) ở CẢ HAI page thật sự đồng thời: cả hai
     // click() được gọi song song (không await tuần tự) trước khi chờ kết quả.
-    const clicks = Promise.all([fireReserveClick(pageA), fireReserveClick(pageB)]);
-    const outcomes = await Promise.all([waitForReserveOutcome(pageA), waitForReserveOutcome(pageB)]);
-    await clicks;
+    const outcomes = await Promise.all([reserveAndGetOutcome(pageA), reserveAndGetOutcome(pageB)]);
 
     const heldCount = outcomes.filter((o) => o === 'held').length;
     const soldOutCount = outcomes.filter((o) => o === 'sold_out').length;
@@ -128,9 +112,11 @@ async function runOversellRace(browser: Browser, request: APIRequestContext): Pr
     expect(heldCount, `expected exactly 1 winner, outcomes were: ${JSON.stringify(outcomes)}`).toBe(1);
     expect(soldOutCount, `expected exactly 1 loser, outcomes were: ${JSON.stringify(outcomes)}`).toBe(1);
 
-    // Assert the winner's page actually shows a real hold with a countdown,
-    // not just a bare /checkout URL.
+    // Assert the winner's page actually settles into a real hold with a
+    // countdown, not just a successful response — its own navigate("/checkout")
+    // still needs a moment to run after the response above resolves.
     const winnerPage = outcomes[0] === 'held' ? pageA : pageB;
+    await expect(winnerPage).toHaveURL(/\/checkout/, { timeout: 10_000 });
     await expect(winnerPage.getByText(/Hold expires in/i)).toBeVisible();
 
     // Data-layer assertion: no more than one ticket in this category can be

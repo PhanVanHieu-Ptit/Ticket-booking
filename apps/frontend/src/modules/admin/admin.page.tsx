@@ -82,7 +82,7 @@ export const AdminPage: React.FC = () => {
               <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary">
                 <Lock className="w-6 h-6" />
               </div>
-              <h2 className="text-2xl font-black tracking-tight text-white mt-3">Admin Access Required</h2>
+              <h2 className="text-2xl font-extrabold tracking-tight text-white mt-3">Admin Access Required</h2>
               <p className="text-sm text-zinc-400">Enter passcode to view sales metrics and monitor holds.</p>
             </div>
 
@@ -128,7 +128,7 @@ export const AdminPage: React.FC = () => {
         {/* Header */}
         <section className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800/80 pb-6">
           <div>
-            <h2 className="text-3xl font-black tracking-tight text-white bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
+            <h2 className="text-3xl font-extrabold tracking-tight text-white bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
               Admin Dashboard
             </h2>
             <p className="text-zinc-400 text-sm mt-1">Real-time metrics and active ticket hold monitor.</p>
@@ -159,7 +159,7 @@ export const AdminPage: React.FC = () => {
         <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Total Tickets Sold</div>
-            <div className="text-4xl font-black mt-2 text-white">
+            <div className="text-4xl font-extrabold mt-2 text-white">
               {metrics ? metrics.totalTicketsSold : 0}
             </div>
             <div className="text-xs text-zinc-500 mt-2">
@@ -169,7 +169,7 @@ export const AdminPage: React.FC = () => {
 
           <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Total Revenue</div>
-            <div className="text-4xl font-black mt-2 text-emerald-400">
+            <div className="text-4xl font-extrabold mt-2 text-emerald-400">
               ${metrics ? metrics.totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00"}
             </div>
             <div className="text-xs text-zinc-500 mt-2">
@@ -179,7 +179,7 @@ export const AdminPage: React.FC = () => {
 
           <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Active Holds</div>
-            <div className="text-4xl font-black mt-2 text-amber-400">
+            <div className="text-4xl font-extrabold mt-2 text-amber-400">
               {activeHoldsCount}
             </div>
             <div className="text-xs text-zinc-500 mt-2">
@@ -189,61 +189,42 @@ export const AdminPage: React.FC = () => {
 
           <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 backdrop-blur-md relative overflow-hidden group hover:border-zinc-700/80 transition-all">
             <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Available Inventory</div>
-            <div className="text-4xl font-black mt-2 text-blue-400">
-              {metrics ? (metrics.availableInventory.VIP + metrics.availableInventory.Standard) : 0}
+            <div className="text-4xl font-extrabold mt-2 text-blue-400">
+              {metrics ? Object.values(metrics.availableInventory).reduce((sum, n) => sum + n, 0) : 0}
             </div>
-            <div className="text-xs text-zinc-500 mt-2 flex justify-between">
-              <span>VIP: {metrics ? metrics.availableInventory.VIP : 0}</span>
-              <span>Std: {metrics ? metrics.availableInventory.Standard : 0}</span>
+            <div className="text-xs text-zinc-500 mt-2 flex justify-between gap-2">
+              {metrics &&
+                Object.entries(metrics.availableInventory).map(([category, count]) => (
+                  <span key={category}>{category}: {count}</span>
+                ))}
             </div>
           </div>
         </section>
 
         {/* Detailed Breakdown section */}
         <section className="grid gap-6 md:grid-cols-2">
-          {/* VIP Breakdown */}
-          <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/10 space-y-4">
-            <h3 className="text-base font-bold text-white flex items-center justify-between">
-              <span>VIP Category Inventory</span>
-              <span className="text-xs font-normal text-zinc-500">Capacity: 100</span>
-            </h3>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Available</span>
-                <span className="text-white font-semibold">{metrics ? metrics.availableInventory.VIP : 0}</span>
+          {metrics &&
+            Object.keys(metrics.availableInventory).map((category) => (
+              <div key={category} className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/10 space-y-4">
+                <h3 className="text-base font-bold text-white flex items-center justify-between">
+                  <span>{category} Category Inventory</span>
+                </h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-zinc-400">Available</span>
+                    <span className="text-white font-semibold">{metrics.availableInventory[category] ?? 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-zinc-400">Held (Pending)</span>
+                    <span className="text-amber-400 font-semibold">{metrics.heldInventory[category] ?? 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-zinc-400">Remaining (Not Sold)</span>
+                    <span className="text-blue-400 font-semibold">{metrics.remainingInventory[category] ?? 0}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Held (Pending)</span>
-                <span className="text-amber-400 font-semibold">{metrics ? metrics.heldInventory.VIP : 0}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Remaining (Not Sold)</span>
-                <span className="text-blue-400 font-semibold">{metrics ? metrics.remainingInventory.VIP : 0}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Standard Breakdown */}
-          <div className="p-6 rounded-2xl border border-zinc-800/80 bg-zinc-900/10 space-y-4">
-            <h3 className="text-base font-bold text-white flex items-center justify-between">
-              <span>Standard Category Inventory</span>
-              <span className="text-xs font-normal text-zinc-500">Capacity: 400</span>
-            </h3>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Available</span>
-                <span className="text-white font-semibold">{metrics ? metrics.availableInventory.Standard : 0}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Held (Pending)</span>
-                <span className="text-amber-400 font-semibold">{metrics ? metrics.heldInventory.Standard : 0}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Remaining (Not Sold)</span>
-                <span className="text-blue-400 font-semibold">{metrics ? metrics.remainingInventory.Standard : 0}</span>
-              </div>
-            </div>
-          </div>
+            ))}
         </section>
 
         {/* Holds List Table */}

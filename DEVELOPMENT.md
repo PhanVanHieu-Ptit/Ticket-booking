@@ -139,3 +139,18 @@ redis-server --notify-keyspace-events Kx
 | `npm run infra:logs`   | Tunnels container logs in real-time.               |
 | `npm run lint`         | Runs ESLint checks across the frontend workspace.  |
 | `npm run format`       | Formats all source files with Prettier.            |
+| `npm run preview:frontend` | Builds the frontend and serves the production bundle via `vite preview`. |
+
+---
+
+## Performance / Lighthouse Testing
+
+`npm run dev` serves the frontend unbundled and unminified (Vite dev server) — every module is fetched as its own network request and none of it is minified or tree-shaken. That's expected for development, but it makes dev-server Lighthouse scores meaningless as a measure of real-world performance.
+
+To get an accurate performance/Lighthouse read, run against the production build instead:
+
+```bash
+npm run preview:frontend
+```
+
+This runs `vite build` then serves the built `dist/` output via `vite preview` (default `http://localhost:4173`). Run Lighthouse against that URL, not `http://localhost:3000`.
