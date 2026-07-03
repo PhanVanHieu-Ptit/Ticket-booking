@@ -140,6 +140,8 @@ redis-server --notify-keyspace-events Kx
 | `npm run lint`         | Runs ESLint checks across the frontend workspace.  |
 | `npm run format`       | Formats all source files with Prettier.            |
 | `npm run preview:frontend` | Builds the frontend and serves the production bundle via `vite preview`. |
+| `npm run test:backend` (or `make test`) | Runs the Go backend test suite (`go test ./...`). Integration tests hit Postgres/Redis via `npm run infra:up` and `t.Skip` themselves if that infra isn't running. |
+| `npm run test:backend:race` | Same as above, with the `-race` data race detector enabled. |
 
 ---
 
@@ -168,7 +170,8 @@ The backend (Postgres + Redis + long-lived SSE connections + cron background job
    - **Pooled** (hostname contains `-pooler`) → used for `DATABASE_URL` (runtime queries; Neon's pooler is PgBouncer-based transaction mode, same as the local docker-compose PgBouncer).
    - **Direct/unpooled** → used for `DIRECT_DATABASE_URL` (required for migrations/DDL, which can't run through a transaction-mode pooler).
 3. Both must keep `sslmode=require` (Neon rejects plain connections; local dev uses `sslmode=disable` instead).
-4. Run migrations against the direct URL: `DIRECT_DATABASE_URL="<neon-direct-url>" make migrate-up`.
+4. **Strip `channel_binding=require` from the copied string.** Neon appends it by default, but `pgx` (this project's Postgres driver, see [db.go](apps/backend/internal/shared/db/db.go)) doesn't recognize it as a libpq parameter and forwards it to Postgres as a startup runtime param, which the server rejects with `unrecognized configuration parameter "channel_binding"`. This fails `db.Init` before the HTTP server ever binds its port — on Render this surfaces as a generic "No open ports detected" deploy failure, not an obvious DB error.
+5. Run migrations against the direct URL: `DIRECT_DATABASE_URL="<neon-direct-url>" make migrate-up`.
 
 ### 2. Redis → Upstash
 
