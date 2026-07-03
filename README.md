@@ -27,14 +27,21 @@ This README is the **single entry point** for the project — for humans and AI 
 
 ## 2. Screenshots
 
-> Screenshots are not yet checked into the repo. Placeholders below map to the real pages — replace with actual captures under `docs/screenshots/` when available.
-
 | Page | Preview |
 | --- | --- |
 | Home — Live Ticket Availability | <img width="1916" height="932" alt="Screenshot 2026-07-03 at 21 49 16" src="https://github.com/user-attachments/assets/bf6cdca4-b397-4da2-a951-6e6da9ceeb19" /> |
 | Booking / Reservation Hold | <img width="1916" height="934" alt="Screenshot 2026-07-03 at 21 49 44" src="https://github.com/user-attachments/assets/78b6482d-e9d4-43f5-ad1f-b9304abf4a7e" />|
 | Checkout / Payment |<img width="1917" height="925" alt="Screenshot 2026-07-03 at 21 51 35" src="https://github.com/user-attachments/assets/121f01f1-5309-49ca-84c7-1b19d0adbe32" /> |
 | Admin Analytics Dashboard |<img width="1918" height="928" alt="Screenshot 2026-07-03 at 21 53 36" src="https://github.com/user-attachments/assets/53ab2220-bb50-4733-a0fc-db42a67c343d" />|
+
+### Lighthouse Scores
+
+| Page | Report |
+| --- | --- |
+| Home — Live Ticket Availability | _(add Lighthouse screenshot)_ |
+| Booking / Reservation Hold | _(add Lighthouse screenshot)_ |
+| Checkout / Payment | _(add Lighthouse screenshot)_ |
+| Admin Analytics Dashboard | _(add Lighthouse screenshot)_ |
 
 ---
 
