@@ -1,13 +1,4 @@
-databases:
-  - name: ticket-booking-db
-    plan: free
-    databaseName: ticket_booking
-
 services:
-  - name: ticket-booking-redis
-    type: keyvalue
-    plan: free
-
   - name: ticket-booking-api
     type: web
     runtime: docker
@@ -21,22 +12,18 @@ services:
         value: production
       - key: GIN_MODE
         value: release
+      # DB is Neon (external), not a Render-managed Postgres — set manually.
+      # Use Neon's pooled connection string (hostname contains "-pooler"),
+      # with sslmode=require.
       - key: DATABASE_URL
-        fromDatabase:
-          name: ticket-booking-db
-          property: connectionString
-      # No PgBouncer sidecar on Render at this scale; point both at the same
-      # Postgres connection string (locally these differ: DATABASE_URL goes
-      # through the docker-compose PgBouncer container, DIRECT_DATABASE_URL
-      # bypasses it for migrations).
+        sync: false
+      # Use Neon's direct (unpooled) connection string — required for DDL/migrations.
       - key: DIRECT_DATABASE_URL
-        fromDatabase:
-          name: ticket-booking-db
-          property: connectionString
+        sync: false
+      # Redis is Upstash (external), not a Render Key Value instance — set manually.
+      # Use Upstash's rediss:// (TLS) connection string.
       - key: REDIS_URL
-        fromService:
-          name: ticket-booking-redis
-          property: connectionString
+        sync: false
       # Set manually in the Render dashboard after the first deploy.
       - key: JWT_SECRET
         sync: false
