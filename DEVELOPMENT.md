@@ -161,19 +161,37 @@ This runs `vite build` then serves the built `dist/` output via `vite preview` (
 
 The backend (Postgres + Redis + long-lived SSE connections + cron background jobs, all in one Go process) cannot run on Vercel's serverless/edge functions. Deploy it separately: frontend on Vercel, backend on Render.
 
-### 1. Backend → Render
+### 1. Database → Neon
 
-1. In the Render dashboard, create a new **Blueprint** from this repo — it picks up [render.yaml](render.yaml), which provisions a Postgres database, a Key Value (Redis) instance, and a Docker web service built from [apps/backend/Dockerfile](apps/backend/Dockerfile).
-2. Set the `JWT_SECRET` and `ADMIN_TOKEN` env vars on the web service (marked `sync: false` in the blueprint, so they're not auto-filled).
+1. Create a Neon project and database.
+2. From the Neon dashboard, copy two connection strings:
+   - **Pooled** (hostname contains `-pooler`) → used for `DATABASE_URL` (runtime queries; Neon's pooler is PgBouncer-based transaction mode, same as the local docker-compose PgBouncer).
+   - **Direct/unpooled** → used for `DIRECT_DATABASE_URL` (required for migrations/DDL, which can't run through a transaction-mode pooler).
+3. Both must keep `sslmode=require` (Neon rejects plain connections; local dev uses `sslmode=disable` instead).
+4. Run migrations against the direct URL: `DIRECT_DATABASE_URL="<neon-direct-url>" make migrate-up`.
+
+### 2. Redis → Upstash
+
+1. Create an Upstash Redis database (choose a region close to the Render service).
+2. Copy the **TLS** connection string — it starts with `rediss://` (not `redis://`). The backend's `redis.ParseURL` ([client.go](apps/backend/internal/redis/client.go)) auto-detects TLS from the scheme, so no code change is needed.
+3. This value goes into `REDIS_URL`.
+
+### 3. Backend → Render
+
+1. In the Render dashboard, create a new **Blueprint** from this repo — it picks up [render.yaml](render.yaml), which provisions a Docker web service built from [apps/backend/Dockerfile](apps/backend/Dockerfile). Postgres and Redis are external (Neon/Upstash), so the blueprint no longer provisions them.
+2. Set the following env vars on the web service (all marked `sync: false` in the blueprint, so they're not auto-filled):
+   - `DATABASE_URL`, `DIRECT_DATABASE_URL` (from Neon, step 1)
+   - `REDIS_URL` (from Upstash, step 2)
+   - `JWT_SECRET`, `ADMIN_TOKEN`
 3. Note the resulting service URL, e.g. `https://ticket-booking-api.onrender.com`.
 
-### 2. Frontend → Vercel
+### 4. Frontend → Vercel
 
 1. Import this repo into Vercel. It picks up [vercel.json](vercel.json) at the repo root (`buildCommand: npm run build:frontend`, `outputDirectory: apps/frontend/dist`).
 2. Set the `VITE_API_BASE_URL` env var in the Vercel project to the Render backend URL from step 1.
 3. Deploy, and note the resulting frontend URL, e.g. `https://ticket-booking.vercel.app`.
 
-### 3. Connect them (CORS)
+### 5. Connect them (CORS)
 
 Frontend and backend now live on different origins, so the backend needs to know which origin to trust for credentialed (cookie-based) requests:
 
