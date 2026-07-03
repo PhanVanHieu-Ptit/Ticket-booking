@@ -2,13 +2,17 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/session"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/errors"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/logger"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/shared/types"
+	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/sse"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -205,4 +209,70 @@ func (h *AdminHandler) GetHolds(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, types.NewSuccessResponse(holds))
+}
+
+// StreamAdminUpdates establishes a persistent SSE stream that notifies the
+// admin dashboard whenever ticket/hold state changes, so it can refetch
+// metrics and holds without polling. It forwards the same broadcast messages
+// emitted for the public availability stream (inventory_update /
+// event_sold_out), since those already fire on every mutation relevant to
+// admin metrics (reservation, cancellation, purchase, expiry reclaim).
+//
+// EventSource cannot set an Authorization header, so the admin token is
+// accepted via the Authorization header (for parity/testing) or a
+// `?token=` query parameter (for the browser EventSource connection).
+func (h *AdminHandler) StreamAdminUpdates(c *gin.Context) {
+	tokenStr := c.Query("token")
+	if tokenStr == "" {
+		authHeader := c.GetHeader("Authorization")
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			tokenStr = parts[1]
+		}
+	}
+
+	if tokenStr == "" {
+		c.Error(errors.New(http.StatusUnauthorized, errors.ErrCodeAdminUnauthorized, "Admin authentication token is required"))
+		c.Abort()
+		return
+	}
+
+	valid, err := session.VerifyAdminToken(tokenStr, h.jwtSecret)
+	if err != nil || !valid {
+		c.Error(errors.New(http.StatusUnauthorized, errors.ErrCodeAdminUnauthorized, "Invalid or expired admin session token"))
+		c.Abort()
+		return
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("Transfer-Encoding", "chunked")
+
+	clientChan := sse.GlobalBroker.AddClient()
+	defer sse.GlobalBroker.RemoveClient(clientChan)
+
+	// Flush headers immediately so the client's EventSource.onopen fires
+	// right away, instead of waiting for the first heartbeat/broadcast.
+	fmt.Fprintf(c.Writer, "event: connected\ndata: {}\n\n")
+	c.Writer.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	c.Stream(func(w io.Writer) bool {
+		select {
+		case msg, ok := <-clientChan:
+			if !ok {
+				return false
+			}
+			fmt.Fprintf(w, "%s", msg)
+			return true
+		case <-ticker.C:
+			fmt.Fprintf(w, ": keep-alive\n\n")
+			return true
+		case <-c.Request.Context().Done():
+			return false
+		}
+	})
 }

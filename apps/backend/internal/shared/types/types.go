@@ -3,7 +3,7 @@ package types
 // ResponseEnvelope is the standard JSON wrapper for all API responses.
 type ResponseEnvelope[T any] struct {
 	Success bool      `json:"success"`
-	Data    T         `json:"data,omitempty"`
+	Data    T         `json:"data"`
 	Error   *APIError `json:"error,omitempty"`
 }
 

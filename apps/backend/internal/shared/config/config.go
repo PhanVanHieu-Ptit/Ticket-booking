@@ -10,14 +10,15 @@ import (
 
 // Config holds the application configuration.
 type Config struct {
-	Port              string
-	AppEnv            string
-	GinMode           string
-	DatabaseURL       string
-	DirectDatabaseURL string
-	RedisURL          string
-	AdminToken        string
-	JWTSecret         string
+	Port               string
+	AppEnv             string
+	GinMode            string
+	DatabaseURL        string
+	DirectDatabaseURL  string
+	RedisURL           string
+	AdminToken         string
+	JWTSecret          string
+	CORSAllowedOrigins []string
 }
 
 // Load loads the configuration from environment variables.
@@ -27,14 +28,15 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:              getEnv("PORT", "8080"),
-		AppEnv:            getEnv("APP_ENV", "development"),
-		GinMode:           getEnv("GIN_MODE", "debug"),
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		DirectDatabaseURL: os.Getenv("DIRECT_DATABASE_URL"),
-		RedisURL:          os.Getenv("REDIS_URL"),
-		AdminToken:        os.Getenv("ADMIN_TOKEN"),
-		JWTSecret:         os.Getenv("JWT_SECRET"),
+		Port:               getEnv("PORT", "8080"),
+		AppEnv:             getEnv("APP_ENV", "development"),
+		GinMode:            getEnv("GIN_MODE", "debug"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		DirectDatabaseURL:  os.Getenv("DIRECT_DATABASE_URL"),
+		RedisURL:           os.Getenv("REDIS_URL"),
+		AdminToken:         os.Getenv("ADMIN_TOKEN"),
+		JWTSecret:          os.Getenv("JWT_SECRET"),
+		CORSAllowedOrigins: parseOriginList(os.Getenv("CORS_ALLOWED_ORIGINS")),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -81,10 +83,34 @@ func (c *Config) IsDevelopment() bool {
 	return c.AppEnv == "development" || c.AppEnv == ""
 }
 
+// CrossOriginEnabled returns true when an explicit CORS origin whitelist has
+// been configured, meaning the frontend is expected to be deployed on a
+// different origin (e.g. Vercel) than this backend.
+func (c *Config) CrossOriginEnabled() bool {
+	return len(c.CORSAllowedOrigins) > 0
+}
+
 func getEnv(key, defaultValue string) string {
 	value := os.Getenv(key)
 	if value == "" {
 		return defaultValue
 	}
 	return value
+}
+
+// parseOriginList parses a comma-separated list of origins, trimming
+// whitespace and dropping empty entries.
+func parseOriginList(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			origins = append(origins, p)
+		}
+	}
+	return origins
 }

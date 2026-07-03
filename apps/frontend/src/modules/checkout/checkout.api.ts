@@ -1,3 +1,5 @@
+import { apiUrl } from "../../lib/apiBase";
+
 export interface CheckoutPayload {
   ticketId: number;
   email: string;
@@ -31,7 +33,7 @@ export const checkoutApi = {
 
     let response: Response;
     try {
-      response = await fetch("/api/v1/payments/checkout", {
+      response = await fetch(apiUrl("/api/v1/payments/checkout"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -45,6 +47,7 @@ export const checkoutApi = {
           simulate_status: payload.simulateStatus,
         }),
         signal: controller.signal,
+        credentials: "include",
       });
     } catch (err: any) {
       if (err.name === "AbortError") {

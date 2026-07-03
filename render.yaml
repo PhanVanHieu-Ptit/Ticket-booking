@@ -1,0 +1,48 @@
+databases:
+  - name: ticket-booking-db
+    plan: free
+    databaseName: ticket_booking
+
+services:
+  - name: ticket-booking-redis
+    type: keyvalue
+    plan: free
+
+  - name: ticket-booking-api
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: apps/backend/Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: APP_ENV
+        value: production
+      - key: GIN_MODE
+        value: release
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ticket-booking-db
+          property: connectionString
+      # No PgBouncer sidecar on Render at this scale; point both at the same
+      # Postgres connection string (locally these differ: DATABASE_URL goes
+      # through the docker-compose PgBouncer container, DIRECT_DATABASE_URL
+      # bypasses it for migrations).
+      - key: DIRECT_DATABASE_URL
+        fromDatabase:
+          name: ticket-booking-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: ticket-booking-redis
+          property: connectionString
+      # Set manually in the Render dashboard after the first deploy.
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      # Set once the Vercel frontend URL is known, e.g.
+      # https://ticket-booking.vercel.app
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false

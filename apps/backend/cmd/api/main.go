@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"slices"
 
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/handlers"
 	"github.com/PhanVanHieu-Ptit/ticket-booking/backend/internal/middleware"
@@ -87,11 +88,18 @@ func main() {
 	// that serializes an error response for non-panic failures.
 	r.Use(middleware.ErrorHandlerMiddleware(cfg.IsProduction()))
 
-	// Custom CORS middleware
+	// Custom CORS middleware. "Access-Control-Allow-Origin: *" is invalid
+	// alongside credentials, so we always echo back a specific origin: either
+	// the configured whitelist (production, cross-origin frontend) or, when
+	// no whitelist is set, the requesting origin itself (local/dev default).
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" && (len(cfg.CORSAllowedOrigins) == 0 || slices.Contains(cfg.CORSAllowedOrigins, origin)) {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		}
+		c.Writer.Header().Set("Vary", "Origin")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With, Idempotency-Key")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 
 		if c.Request.Method == "OPTIONS" {
@@ -143,7 +151,7 @@ func main() {
 
 	// v1 API route group with session middleware
 	v1 := r.Group("/api/v1")
-	v1.Use(middleware.SessionMiddleware(cfg.JWTSecret, cfg.IsProduction()))
+	v1.Use(middleware.SessionMiddleware(cfg.JWTSecret, cfg.IsProduction(), cfg.CrossOriginEnabled()))
 	{
 		// Sessions endpoint
 		v1.POST("/sessions", sessionHandler.InitializeSession)
@@ -175,6 +183,10 @@ func main() {
 		{
 			// Login is unprotected by admin auth middleware (but has session middleware)
 			admin.POST("/login", adminHandler.Login)
+
+			// Stream auths the token manually (EventSource can't set headers),
+			// so it sits outside the standard AdminAuthMiddleware group.
+			admin.GET("/stream", adminHandler.StreamAdminUpdates)
 
 			// Protect all other admin routes
 			adminAuth := admin.Group("")

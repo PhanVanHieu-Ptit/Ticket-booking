@@ -15,7 +15,7 @@ func TestSessionMiddleware_NewSession(t *testing.T) {
 	r := gin.New()
 
 	jwtSecret := "test-jwt-secret-key-2026"
-	r.Use(SessionMiddleware(jwtSecret, false))
+	r.Use(SessionMiddleware(jwtSecret, false, false))
 
 	r.GET("/test", func(c *gin.Context) {
 		sessionID, exists := c.Get("session_id")
@@ -53,7 +53,7 @@ func TestSessionMiddleware_ExistingSession(t *testing.T) {
 	r := gin.New()
 
 	jwtSecret := "test-jwt-secret-key-2026"
-	r.Use(SessionMiddleware(jwtSecret, false))
+	r.Use(SessionMiddleware(jwtSecret, false, false))
 
 	r.GET("/test", func(c *gin.Context) {
 		sessionID, _ := c.Get("session_id")

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { bookingApi, TicketCategoryAvailability } from "../modules/booking/booking.api";
+import { apiUrl } from "../lib/apiBase";
 
 const POLL_INTERVAL_MS = 8000;
 
@@ -65,7 +66,7 @@ export function useTicketAvailability() {
     }
 
     // Connect using EventSource. Browser includes cookies by default for same-origin (proxied) requests.
-    const url = "/api/v1/tickets/availability/stream";
+    const url = apiUrl("/api/v1/tickets/availability/stream");
     const es = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = es;
 

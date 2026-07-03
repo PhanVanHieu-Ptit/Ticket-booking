@@ -154,3 +154,30 @@ npm run preview:frontend
 ```
 
 This runs `vite build` then serves the built `dist/` output via `vite preview` (default `http://localhost:4173`). Run Lighthouse against that URL, not `http://localhost:3000`.
+
+---
+
+## Deployment
+
+The backend (Postgres + Redis + long-lived SSE connections + cron background jobs, all in one Go process) cannot run on Vercel's serverless/edge functions. Deploy it separately: frontend on Vercel, backend on Render.
+
+### 1. Backend → Render
+
+1. In the Render dashboard, create a new **Blueprint** from this repo — it picks up [render.yaml](render.yaml), which provisions a Postgres database, a Key Value (Redis) instance, and a Docker web service built from [apps/backend/Dockerfile](apps/backend/Dockerfile).
+2. Set the `JWT_SECRET` and `ADMIN_TOKEN` env vars on the web service (marked `sync: false` in the blueprint, so they're not auto-filled).
+3. Note the resulting service URL, e.g. `https://ticket-booking-api.onrender.com`.
+
+### 2. Frontend → Vercel
+
+1. Import this repo into Vercel. It picks up [vercel.json](vercel.json) at the repo root (`buildCommand: npm run build:frontend`, `outputDirectory: apps/frontend/dist`).
+2. Set the `VITE_API_BASE_URL` env var in the Vercel project to the Render backend URL from step 1.
+3. Deploy, and note the resulting frontend URL, e.g. `https://ticket-booking.vercel.app`.
+
+### 3. Connect them (CORS)
+
+Frontend and backend now live on different origins, so the backend needs to know which origin to trust for credentialed (cookie-based) requests:
+
+1. On Render, set `CORS_ALLOWED_ORIGINS` on the web service to the Vercel URL from step 2 (e.g. `https://ticket-booking.vercel.app`). This also switches the `session_token` cookie to `SameSite=None; Secure`, which is required for it to be sent cross-origin at all — see [config.go](apps/backend/internal/shared/config/config.go) and [session.go](apps/backend/internal/middleware/session.go).
+2. Redeploy the Render service so the new env var takes effect.
+
+Local development is unaffected by any of this: `VITE_API_BASE_URL` and `CORS_ALLOWED_ORIGINS` are both left empty, so the app keeps using the same-origin Vite proxy and `SameSite=Strict` cookies as before.

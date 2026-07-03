@@ -22,5 +22,8 @@ FROM generate_series(101, 500) AS i;
 SELECT setval('tickets_id_seq', 500);
 
 -- 3. Seed Default Admin Config (passcode: 'admin123' bcrypt-hashed)
+-- ON CONFLICT DO NOTHING keeps this file safe to re-run against a database
+-- that already has admin_configs seeded (e.g. a ticket-only data reset).
 INSERT INTO admin_configs (key, value, description)
-VALUES ('admin_passcode', '$2a$12$LDPGLECY88uBIEuTm4nvQe3bHsE4HwyXX8VQCRj7hYpUAJEUVLdE6', 'Bcrypt hash of the admin dashboard access passcode');
+VALUES ('admin_passcode', '$2a$12$LDPGLECY88uBIEuTm4nvQe3bHsE4HwyXX8VQCRj7hYpUAJEUVLdE6', 'Bcrypt hash of the admin dashboard access passcode')
+ON CONFLICT (key) DO NOTHING;

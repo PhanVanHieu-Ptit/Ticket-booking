@@ -1,4 +1,4 @@
-.PHONY: help infra-up infra-down migrate-up migrate-down seed db-reset run-dev
+.PHONY: help infra-up infra-down migrate-up migrate-down seed db-reset reset-tickets seed-low-stock run-dev
 
 DB_CONTAINER=ticket-booking-postgres
 DB_NAME=ticket_booking
@@ -12,6 +12,8 @@ help:
 	@echo "  make migrate-down  - Rollback database migrations (down)"
 	@echo "  make seed          - Seed the database with tickets and admin config"
 	@echo "  make db-reset      - Reset database (down, up, and seed)"
+	@echo "  make reset-tickets - Reset ticket/order data only (keep schema) and resync Redis"
+	@echo "  make seed-low-stock [CATEGORY=VIP] - Collapse a category down to 1 available ticket"
 	@echo "  make run-dev       - Start frontend and backend development servers"
 
 infra-up:
@@ -36,6 +38,14 @@ seed:
 	@echo "Database seeded successfully."
 
 db-reset: migrate-down migrate-up seed
+
+reset-tickets:
+	@echo "Resetting ticket-related data (tickets, orders) and resyncing Redis..."
+	@bash apps/backend/db/reset_tickets.sh
+	@echo "Ticket data reset complete."
+
+seed-low-stock:
+	@bash apps/backend/db/seed_low_stock.sh $(CATEGORY)
 
 run-dev:
 	npm run dev
